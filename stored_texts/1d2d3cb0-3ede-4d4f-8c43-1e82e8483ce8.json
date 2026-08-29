@@ -1,0 +1,26 @@
+{
+  "content": "工作区场景，包含 build 与 anim 两套命名空间。",
+  "history": [
+    {
+      "revision": 5,
+      "content": "（上一版发布说明）",
+      "saved_at": "2026-08-29T07:12:04.768Z",
+      "change_note": "路径调整",
+      "files": [
+        {
+          "id": "edcab092-611a-48e6-9af9-b42c63849eb9",
+          "name": "hero_rig.ma",
+          "ext": "ma",
+          "category": "场景工程",
+          "aliasKey": "SHOW",
+          "path": "character/hero_rig.ma",
+          "size": null,
+          "checksum": null,
+          "checksumAlgo": null,
+          "publishedAt": null,
+          "note": ""
+        }
+      ]
+    }
+  ]
+}

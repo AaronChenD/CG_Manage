@@ -1,0 +1,39 @@
+{
+  "content": "Stage 结构：hero/geo（Payload）+ hero/material（Reference）。缺失文件通常是贴图别名未配置。",
+  "history": [
+    {
+      "revision": 1,
+      "content": "（上一版发布说明）",
+      "saved_at": "2026-08-29T07:12:04.768Z",
+      "change_note": "路径调整",
+      "files": [
+        {
+          "id": "6969f662-78d3-4076-8087-6e2091561ee4",
+          "name": "hero.usda",
+          "ext": "usda",
+          "category": "装配/引用",
+          "aliasKey": "PUB",
+          "path": "usd/hero.usda",
+          "size": null,
+          "checksum": null,
+          "checksumAlgo": null,
+          "publishedAt": null,
+          "note": ""
+        },
+        {
+          "id": "63a2db8a-a530-4d12-ba44-77cc51b68967",
+          "name": "hero_body_basecolor.png",
+          "ext": "png",
+          "category": "贴图/序列帧",
+          "aliasKey": "TEX",
+          "path": "hero_body_basecolor.png",
+          "size": null,
+          "checksum": null,
+          "checksumAlgo": null,
+          "publishedAt": null,
+          "note": ""
+        }
+      ]
+    }
+  ]
+}

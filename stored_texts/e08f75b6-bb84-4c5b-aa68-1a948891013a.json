@@ -1,0 +1,26 @@
+{
+  "content": "动捕原始数据，已清理抖动；重定向到 hero_rig 前请先确认骨骼命名。",
+  "history": [
+    {
+      "revision": 1,
+      "content": "（上一版发布说明）",
+      "saved_at": "2026-08-29T07:12:04.768Z",
+      "change_note": "路径调整",
+      "files": [
+        {
+          "id": "016e5f88-1898-4ac3-9183-94b6b6043e36",
+          "name": "hero_walk.bvh",
+          "ext": "bvh",
+          "category": "动画",
+          "aliasKey": "PUB",
+          "path": "anim/hero_walk.bvh",
+          "size": null,
+          "checksum": null,
+          "checksumAlgo": null,
+          "publishedAt": null,
+          "note": ""
+        }
+      ]
+    }
+  ]
+}

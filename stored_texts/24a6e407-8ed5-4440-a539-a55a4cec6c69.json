@@ -1,0 +1,4 @@
+{
+  "content": "绑定工具集，包含多个模块文件。\n\n安装：把整个 my_rig_tools 目录放进 Maya 用户脚本目录\n调用：shelf 按钮执行 import my_rig_tools; my_rig_tools.main()",
+  "history": []
+}

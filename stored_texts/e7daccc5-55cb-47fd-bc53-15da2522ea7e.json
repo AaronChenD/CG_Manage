@@ -1,0 +1,4 @@
+{
+  "content": "import bpy\nfrom pathlib import Path\n\n# 将所有外部贴图重新指向当前项目的规范目录\nROOT = Path(\"$TEX\")\nfor image in bpy.data.images:\n    if image.source == 'FILE':\n        image.filepath = str(ROOT / Path(image.filepath).name)\n        image.reload()",
+  "history": []
+}

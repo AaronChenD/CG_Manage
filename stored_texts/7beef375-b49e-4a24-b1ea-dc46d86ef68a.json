@@ -1,0 +1,39 @@
+{
+  "content": "布料 + 头发双缓存，帧范围 1-120，包含 uvWrite 与 velocity 通道。",
+  "history": [
+    {
+      "revision": 4,
+      "content": "（上一版发布说明）",
+      "saved_at": "2026-08-29T07:12:04.768Z",
+      "change_note": "路径调整",
+      "files": [
+        {
+          "id": "a2ba2cd6-69bb-40b1-bf5c-88cea6721e2e",
+          "name": "hero_geo.abc",
+          "ext": "abc",
+          "category": "缓存几何",
+          "aliasKey": "PUB",
+          "path": "cache/hero_geo.abc",
+          "size": null,
+          "checksum": null,
+          "checksumAlgo": null,
+          "publishedAt": null,
+          "note": ""
+        },
+        {
+          "id": "aa44cfdc-c875-4c22-9737-760f66f4b4d4",
+          "name": "hero_sim_final.abc",
+          "ext": "abc",
+          "category": "缓存几何",
+          "aliasKey": "SHOW",
+          "path": "fx/cache/hero_sim_final.abc",
+          "size": null,
+          "checksum": null,
+          "checksumAlgo": null,
+          "publishedAt": null,
+          "note": ""
+        }
+      ]
+    }
+  ]
+}

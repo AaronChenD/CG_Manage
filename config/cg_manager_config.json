@@ -1,0 +1,529 @@
+{
+  "version": 2,
+  "categories": [
+    {
+      "id": "15c53a0b-84d3-47c4-8488-1b89736279c4",
+      "name": "全局通用",
+      "description": "跨软件的管线工具与规范",
+      "color": "#94a3b8",
+      "icon": "globe",
+      "sortOrder": 0,
+      "createdAt": "2026-08-29T07:12:04.768Z",
+      "updatedAt": "2026-08-29T07:12:04.768Z"
+    },
+    {
+      "id": "b207d4cf-7277-4afe-9613-26129ecd4eea",
+      "name": "Maya",
+      "description": "绑定、动画与发布流程",
+      "color": "#fb923c",
+      "icon": "box",
+      "sortOrder": 1,
+      "createdAt": "2026-08-29T07:12:04.768Z",
+      "updatedAt": "2026-08-29T07:12:04.768Z"
+    },
+    {
+      "id": "c53aea31-a5f7-4ecf-a35a-21b64ba1f552",
+      "name": "Houdini",
+      "description": "程序化建模与特效工具",
+      "color": "#f87171",
+      "icon": "sparkles",
+      "sortOrder": 2,
+      "createdAt": "2026-08-29T07:12:04.768Z",
+      "updatedAt": "2026-08-29T07:12:04.768Z"
+    },
+    {
+      "id": "4e47d654-a312-4697-bdbe-b722df48b230",
+      "name": "Blender",
+      "description": "几何节点、工具与插件",
+      "color": "#60a5fa",
+      "icon": "aperture",
+      "sortOrder": 3,
+      "createdAt": "2026-08-29T07:12:04.768Z",
+      "updatedAt": "2026-08-29T07:12:04.768Z"
+    },
+    {
+      "id": "c99edd7d-4cba-447e-b848-e0a106e4a283",
+      "name": "Unreal Engine",
+      "description": "运行时与技术美术资源",
+      "color": "#a78bfa",
+      "icon": "gamepad",
+      "sortOrder": 4,
+      "createdAt": "2026-08-29T07:12:04.768Z",
+      "updatedAt": "2026-08-29T07:12:04.768Z"
+    }
+  ],
+  "assets": [
+    {
+      "id": "bed7ae1d-1e67-483e-b79a-c56f3fde6ec0",
+      "title": "智能发布 — Alembic 缓存导出",
+      "categoryId": "b207d4cf-7277-4afe-9613-26129ecd4eea",
+      "kind": "Executable",
+      "language": "Python",
+      "mediaKind": "其他",
+      "tags": [
+        "发布",
+        "缓存",
+        "管线",
+        "批处理"
+      ],
+      "links": [],
+      "files": [],
+      "tech": {},
+      "package": {
+        "dcc": "",
+        "packageKind": "单文件脚本",
+        "moduleName": "",
+        "importPath": ""
+      },
+      "deploy": null,
+      "revision": 4,
+      "isFavorite": true,
+      "contentFile": "bed7ae1d-1e67-483e-b79a-c56f3fde6ec0.json",
+      "createdAt": "2026-08-29T07:12:04.768Z",
+      "updatedAt": "2026-08-29T07:12:04.768Z",
+      "lastOpenedAt": null
+    },
+    {
+      "id": "c20d243b-0b51-45f8-84f8-9eb30cabcda2",
+      "title": "属性散布工具包（Point Wrangle）",
+      "categoryId": "c53aea31-a5f7-4ecf-a35a-21b64ba1f552",
+      "kind": "Snippet",
+      "language": "VEX",
+      "mediaKind": "其他",
+      "tags": [
+        "点属性",
+        "散布",
+        "程序化"
+      ],
+      "links": [],
+      "files": [],
+      "tech": {},
+      "package": {
+        "dcc": "",
+        "packageKind": "单文件脚本",
+        "moduleName": "",
+        "importPath": ""
+      },
+      "deploy": null,
+      "revision": 2,
+      "isFavorite": true,
+      "contentFile": "c20d243b-0b51-45f8-84f8-9eb30cabcda2.json",
+      "createdAt": "2026-08-29T07:12:04.768Z",
+      "updatedAt": "2026-08-29T07:12:04.768Z",
+      "lastOpenedAt": null
+    },
+    {
+      "id": "e7daccc5-55cb-47fd-bc53-15da2522ea7e",
+      "title": "贴图路径批量重链",
+      "categoryId": "4e47d654-a312-4697-bdbe-b722df48b230",
+      "kind": "Executable",
+      "language": "Python",
+      "mediaKind": "其他",
+      "tags": [
+        "贴图",
+        "路径",
+        "生产环境"
+      ],
+      "links": [],
+      "files": [],
+      "tech": {},
+      "package": {
+        "dcc": "",
+        "packageKind": "单文件脚本",
+        "moduleName": "",
+        "importPath": ""
+      },
+      "deploy": null,
+      "revision": 8,
+      "isFavorite": false,
+      "contentFile": "e7daccc5-55cb-47fd-bc53-15da2522ea7e.json",
+      "createdAt": "2026-08-29T07:12:04.768Z",
+      "updatedAt": "2026-08-29T07:12:04.768Z",
+      "lastOpenedAt": null
+    },
+    {
+      "id": "2e432ca7-2698-4910-afe7-71b9ff1c49f4",
+      "title": "镜头交接检查表",
+      "categoryId": "15c53a0b-84d3-47c4-8488-1b89736279c4",
+      "kind": "Reference",
+      "language": "Markdown",
+      "mediaKind": "其他",
+      "tags": [
+        "交接",
+        "审核",
+        "流程"
+      ],
+      "links": [],
+      "files": [],
+      "tech": {},
+      "package": {
+        "dcc": "",
+        "packageKind": "单文件脚本",
+        "moduleName": "",
+        "importPath": ""
+      },
+      "deploy": null,
+      "revision": 3,
+      "isFavorite": false,
+      "contentFile": "2e432ca7-2698-4910-afe7-71b9ff1c49f4.json",
+      "createdAt": "2026-08-29T07:12:04.768Z",
+      "updatedAt": "2026-08-29T07:12:04.768Z",
+      "lastOpenedAt": null
+    },
+    {
+      "id": "24a6e407-8ed5-4440-a539-a55a4cec6c69",
+      "title": "my_rig_tools 绑定工具包（Maya 多文件模块）",
+      "categoryId": "b207d4cf-7277-4afe-9613-26129ecd4eea",
+      "kind": "Executable",
+      "language": "Python",
+      "mediaKind": "其他",
+      "tags": [
+        "maya",
+        "rigging",
+        "工具包",
+        "模块"
+      ],
+      "links": [],
+      "files": [
+        {
+          "id": "d6a04187-da1a-4c15-aad7-1bd1482ca21c",
+          "name": "__init__.py",
+          "ext": "py",
+          "category": "配置",
+          "aliasKey": "SHOW",
+          "path": "tools/my_rig_tools/__init__.py",
+          "size": null,
+          "checksum": null,
+          "checksumAlgo": null,
+          "publishedAt": null,
+          "note": ""
+        },
+        {
+          "id": "cc4cf460-2327-4ea1-8d70-5c76db82ee95",
+          "name": "rig_utils.py",
+          "ext": "py",
+          "category": "配置",
+          "aliasKey": "SHOW",
+          "path": "tools/my_rig_tools/rig_utils.py",
+          "size": null,
+          "checksum": null,
+          "checksumAlgo": null,
+          "publishedAt": null,
+          "note": ""
+        },
+        {
+          "id": "f217431b-88f9-4f1c-b2fc-7a1d7c595d2d",
+          "name": "ui.py",
+          "ext": "py",
+          "category": "配置",
+          "aliasKey": "SHOW",
+          "path": "tools/my_rig_tools/ui.py",
+          "size": null,
+          "checksum": null,
+          "checksumAlgo": null,
+          "publishedAt": null,
+          "note": ""
+        }
+      ],
+      "tech": {},
+      "package": {
+        "dcc": "Maya",
+        "packageKind": "多文件包 / 模块",
+        "moduleName": "my_rig_tools",
+        "importPath": "scripts/my_rig_tools"
+      },
+      "deploy": {
+        "dcc": "Maya",
+        "installTarget": "maya-scripts",
+        "installSubpath": "scripts/my_rig_tools",
+        "installMethod": "symlink",
+        "hasEntry": true,
+        "entryPoint": "main",
+        "callContext": "shelf",
+        "invocation": "import my_rig_tools\nmy_rig_tools.main()",
+        "createdAt": "",
+        "updatedAt": ""
+      },
+      "revision": 2,
+      "isFavorite": true,
+      "contentFile": "24a6e407-8ed5-4440-a539-a55a4cec6c69.json",
+      "createdAt": "2026-08-29T07:12:04.768Z",
+      "updatedAt": "2026-08-29T07:12:04.768Z",
+      "lastOpenedAt": null
+    },
+    {
+      "id": "5f193f8a-8150-46ee-ab1e-6426942dfd51",
+      "title": "Hero 角色模型（FBX 交付包）",
+      "categoryId": "b207d4cf-7277-4afe-9613-26129ecd4eea",
+      "kind": "File",
+      "language": "File",
+      "mediaKind": "模型",
+      "tags": [
+        "角色",
+        "模型",
+        "fbx",
+        "交付"
+      ],
+      "links": [],
+      "files": [
+        {
+          "id": "0ef0508f-da43-47e6-bb95-6768293f6324",
+          "name": "hero_body.fbx",
+          "ext": "fbx",
+          "category": "模型",
+          "aliasKey": "PUB",
+          "path": "model/hero_body.fbx",
+          "size": null,
+          "checksum": null,
+          "checksumAlgo": null,
+          "publishedAt": null,
+          "note": ""
+        },
+        {
+          "id": "005cbd1e-f2f2-4199-98ad-376fff053ff2",
+          "name": "hero_eyes.fbx",
+          "ext": "fbx",
+          "category": "模型",
+          "aliasKey": "PUB",
+          "path": "model/hero_eyes.fbx",
+          "size": null,
+          "checksum": null,
+          "checksumAlgo": null,
+          "publishedAt": null,
+          "note": ""
+        }
+      ],
+      "tech": {
+        "frameRange": "—",
+        "unitScale": "cm",
+        "upAxis": "Y-up",
+        "reference": "Reference"
+      },
+      "package": {
+        "dcc": "",
+        "packageKind": "单文件脚本",
+        "moduleName": "",
+        "importPath": ""
+      },
+      "deploy": null,
+      "revision": 3,
+      "isFavorite": true,
+      "contentFile": "5f193f8a-8150-46ee-ab1e-6426942dfd51.json",
+      "createdAt": "2026-08-29T07:12:04.768Z",
+      "updatedAt": "2026-08-29T07:12:04.768Z",
+      "lastOpenedAt": null
+    },
+    {
+      "id": "e08f75b6-bb84-4c5b-aa68-1a948891013a",
+      "title": "Hero 走路动画（BVH）",
+      "categoryId": "15c53a0b-84d3-47c4-8488-1b89736279c4",
+      "kind": "File",
+      "language": "File",
+      "mediaKind": "动画",
+      "tags": [
+        "动捕",
+        "bvh",
+        "走路"
+      ],
+      "links": [],
+      "files": [
+        {
+          "id": "016e5f88-1898-4ac3-9183-94b6b6043e36",
+          "name": "hero_walk.bvh",
+          "ext": "bvh",
+          "category": "动画",
+          "aliasKey": "PUB",
+          "path": "anim/hero_walk.bvh",
+          "size": null,
+          "checksum": null,
+          "checksumAlgo": null,
+          "publishedAt": null,
+          "note": ""
+        }
+      ],
+      "tech": {
+        "frameRange": "1-48",
+        "fps": "30",
+        "upAxis": "Y-up"
+      },
+      "package": {
+        "dcc": "",
+        "packageKind": "单文件脚本",
+        "moduleName": "",
+        "importPath": ""
+      },
+      "deploy": null,
+      "revision": 2,
+      "isFavorite": false,
+      "contentFile": "e08f75b6-bb84-4c5b-aa68-1a948891013a.json",
+      "createdAt": "2026-08-29T07:12:04.768Z",
+      "updatedAt": "2026-08-29T07:12:04.768Z",
+      "lastOpenedAt": null
+    },
+    {
+      "id": "7beef375-b49e-4a24-b1ea-dc46d86ef68a",
+      "title": "Hero 几何缓存（Alembic）",
+      "categoryId": "c53aea31-a5f7-4ecf-a35a-21b64ba1f552",
+      "kind": "File",
+      "language": "File",
+      "mediaKind": "缓存几何",
+      "tags": [
+        "abc",
+        "缓存",
+        "sim"
+      ],
+      "links": [],
+      "files": [
+        {
+          "id": "a2ba2cd6-69bb-40b1-bf5c-88cea6721e2e",
+          "name": "hero_geo.abc",
+          "ext": "abc",
+          "category": "缓存几何",
+          "aliasKey": "PUB",
+          "path": "cache/hero_geo.abc",
+          "size": null,
+          "checksum": null,
+          "checksumAlgo": null,
+          "publishedAt": null,
+          "note": ""
+        },
+        {
+          "id": "aa44cfdc-c875-4c22-9737-760f66f4b4d4",
+          "name": "hero_sim_final.abc",
+          "ext": "abc",
+          "category": "缓存几何",
+          "aliasKey": "SHOW",
+          "path": "fx/cache/hero_sim_final.abc",
+          "size": null,
+          "checksum": null,
+          "checksumAlgo": null,
+          "publishedAt": null,
+          "note": ""
+        }
+      ],
+      "tech": {
+        "frameRange": "1-120",
+        "fps": "24",
+        "unitScale": "cm"
+      },
+      "package": {
+        "dcc": "",
+        "packageKind": "单文件脚本",
+        "moduleName": "",
+        "importPath": ""
+      },
+      "deploy": null,
+      "revision": 5,
+      "isFavorite": false,
+      "contentFile": "7beef375-b49e-4a24-b1ea-dc46d86ef68a.json",
+      "createdAt": "2026-08-29T07:12:04.768Z",
+      "updatedAt": "2026-08-29T07:12:04.768Z",
+      "lastOpenedAt": null
+    },
+    {
+      "id": "7a95361b-6c63-4122-b647-9c9f6f07c245",
+      "title": "Hero USD 装配（Stage）",
+      "categoryId": "c99edd7d-4cba-447e-b848-e0a106e4a283",
+      "kind": "File",
+      "language": "File",
+      "mediaKind": "装配/引用",
+      "tags": [
+        "usd",
+        "装配",
+        "onefile"
+      ],
+      "links": [],
+      "files": [
+        {
+          "id": "6969f662-78d3-4076-8087-6e2091561ee4",
+          "name": "hero.usda",
+          "ext": "usda",
+          "category": "装配/引用",
+          "aliasKey": "PUB",
+          "path": "usd/hero.usda",
+          "size": null,
+          "checksum": null,
+          "checksumAlgo": null,
+          "publishedAt": null,
+          "note": ""
+        },
+        {
+          "id": "63a2db8a-a530-4d12-ba44-77cc51b68967",
+          "name": "hero_body_basecolor.png",
+          "ext": "png",
+          "category": "贴图/序列帧",
+          "aliasKey": "TEX",
+          "path": "hero_body_basecolor.png",
+          "size": null,
+          "checksum": null,
+          "checksumAlgo": null,
+          "publishedAt": null,
+          "note": ""
+        }
+      ],
+      "tech": {
+        "lod": "LOD0-LOD3",
+        "reference": "Payload"
+      },
+      "package": {
+        "dcc": "",
+        "packageKind": "单文件脚本",
+        "moduleName": "",
+        "importPath": ""
+      },
+      "deploy": null,
+      "revision": 1,
+      "isFavorite": false,
+      "contentFile": "7a95361b-6c63-4122-b647-9c9f6f07c245.json",
+      "createdAt": "2026-08-29T07:12:04.768Z",
+      "updatedAt": "2026-08-29T07:12:04.768Z",
+      "lastOpenedAt": null
+    },
+    {
+      "id": "1d2d3cb0-3ede-4d4f-8c43-1e82e8483ce8",
+      "title": "Hero 绑定工程（Maya 场景）",
+      "categoryId": "b207d4cf-7277-4afe-9613-26129ecd4eea",
+      "kind": "File",
+      "language": "File",
+      "mediaKind": "场景工程",
+      "tags": [
+        "rig",
+        "绑定",
+        "工程"
+      ],
+      "links": [],
+      "files": [
+        {
+          "id": "edcab092-611a-48e6-9af9-b42c63849eb9",
+          "name": "hero_rig.ma",
+          "ext": "ma",
+          "category": "场景工程",
+          "aliasKey": "SHOW",
+          "path": "character/hero_rig.ma",
+          "size": null,
+          "checksum": null,
+          "checksumAlgo": null,
+          "publishedAt": null,
+          "note": ""
+        }
+      ],
+      "tech": {
+        "upAxis": "Y-up",
+        "unitScale": "cm"
+      },
+      "package": {
+        "dcc": "",
+        "packageKind": "单文件脚本",
+        "moduleName": "",
+        "importPath": ""
+      },
+      "deploy": null,
+      "revision": 6,
+      "isFavorite": false,
+      "contentFile": "1d2d3cb0-3ede-4d4f-8c43-1e82e8483ce8.json",
+      "createdAt": "2026-08-29T07:12:04.768Z",
+      "updatedAt": "2026-08-29T07:12:04.768Z",
+      "lastOpenedAt": null
+    }
+  ]
+}

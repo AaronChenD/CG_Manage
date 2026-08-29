@@ -1,0 +1,17 @@
+{
+  "content": "import maya.cmds as cmds\nfrom pathlib import Path\n\ndef publish_alembic(output_dir: str):\n    \"\"\"按当前场景名导出 Alembic 缓存，返回目标路径。\"\"\"\n    scene = Path(cmds.file(q=True, sn=True))\n    cache_name = scene.stem + \"_geo.abc\"\n    target = Path(output_dir) / cache_name\n    cmds.AbcExport(j=f\"-frameRange 1 120 -uvWrite -file {target}\")\n    return target\n\nprint(publish_alembic(\"$PUB/cache\"))",
+  "history": [
+    {
+      "revision": 2,
+      "content": "# 管线发布工具初始版本\n# 使用当前场景名生成缓存路径。",
+      "saved_at": "2026-08-29T07:12:04.768Z",
+      "change_note": "初始原型"
+    },
+    {
+      "revision": 3,
+      "content": "import maya.cmds as cmds\n# 发布前增加场景校验。",
+      "saved_at": "2026-08-29T07:12:04.768Z",
+      "change_note": "新增场景校验"
+    }
+  ]
+}

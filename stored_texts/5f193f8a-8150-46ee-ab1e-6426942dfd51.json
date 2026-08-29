@@ -1,0 +1,39 @@
+{
+  "content": "交付说明\n\n• 命名规范：hero_<部位>_<版本>\n• 单位 cm，Y-up，冻结变换后导出\n• 引用材质使用 $TEX 下的共享贴图",
+  "history": [
+    {
+      "revision": 2,
+      "content": "（上一版发布说明）",
+      "saved_at": "2026-08-29T07:12:04.768Z",
+      "change_note": "路径调整",
+      "files": [
+        {
+          "id": "0ef0508f-da43-47e6-bb95-6768293f6324",
+          "name": "hero_body.fbx",
+          "ext": "fbx",
+          "category": "模型",
+          "aliasKey": "PUB",
+          "path": "model/hero_body.fbx",
+          "size": null,
+          "checksum": null,
+          "checksumAlgo": null,
+          "publishedAt": null,
+          "note": ""
+        },
+        {
+          "id": "005cbd1e-f2f2-4199-98ad-376fff053ff2",
+          "name": "hero_eyes.fbx",
+          "ext": "fbx",
+          "category": "模型",
+          "aliasKey": "PUB",
+          "path": "model/hero_eyes.fbx",
+          "size": null,
+          "checksum": null,
+          "checksumAlgo": null,
+          "publishedAt": null,
+          "note": ""
+        }
+      ]
+    }
+  ]
+}

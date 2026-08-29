@@ -1,0 +1,4 @@
+{
+  "content": "// Point wrangle —— 确定性属性散布\nint seed = chi(\"seed\");\nfloat density = fit01(rand(@ptnum + seed), 0.15, 1.0);\nf@pscale = density * chf(\"scale\");\nv@Cd = chramp(\"palette\", rand(@ptnum * 17 + seed));",
+  "history": []
+}

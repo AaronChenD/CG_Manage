@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "aliases": [
+    {
+      "key": "SHOW",
+      "label": "当前 Show 根目录",
+      "root": "/app/asset_library/show",
+      "note": "示例目录，可改成 \\\\server\\show\\atlas",
+      "enabled": true,
+      "id": "333edc0b-1132-4744-90f9-d04123a438e6",
+      "createdAt": "2026-08-29T07:12:04.769Z",
+      "updatedAt": "2026-08-29T07:12:04.769Z"
+    },
+    {
+      "key": "PUB",
+      "label": "发布区 publish",
+      "root": "/app/asset_library/publish",
+      "note": "对外交付的模型与缓存",
+      "enabled": true,
+      "id": "1e21dd1c-73dc-4614-bed0-c6581fa2c13c",
+      "createdAt": "2026-08-29T07:12:04.769Z",
+      "updatedAt": "2026-08-29T07:12:04.769Z"
+    },
+    {
+      "key": "TEX",
+      "label": "贴图库",
+      "root": "/app/asset_library/texture",
+      "note": "共享贴图与 Udim 序列",
+      "enabled": true,
+      "id": "384a471a-b058-4dc4-a3c2-51383af13d9e",
+      "createdAt": "2026-08-29T07:12:04.769Z",
+      "updatedAt": "2026-08-29T07:12:04.769Z"
+    }
+  ]
+}
