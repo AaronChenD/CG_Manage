@@ -84,6 +84,8 @@ button:disabled { cursor: not-allowed; opacity: .72; }
 .brand-name strong { font-weight: 800; color: #fff; }
 .brand-name small { display: block; font-size: 9px; letter-spacing: .12em; color: var(--faint); margin-top: 5px; }
 .sidebar-toggle { margin-left: auto; width: 28px!important; height: 28px!important; color: var(--faint)!important; }
+/* 折叠态侧栏里的展开按钮：给足优先级，任何级联规则都不能把它藏起来。 */
+.vault-sidebar .sidebar-toggle { display: inline-grid !important; visibility: visible !important; }
 
 .icon-button { border: 1px solid var(--line); width: 35px; height: 35px; border-radius: 10px; display: inline-grid; place-items: center; background: rgba(255,255,255,.025); color: var(--muted); transition: background .16s, color .16s, border-color .16s, transform .16s; }
 .icon-button:hover { background: var(--surface-hover); color: var(--text); border-color: var(--line-strong); transform: translateY(-1px); }
@@ -131,7 +133,7 @@ button:disabled { cursor: not-allowed; opacity: .72; }
 /* 折叠后仍保留可点击的展开按钮，否则侧栏一旦收起就再也打不开了。 */
 .is-collapsed .brand-row { padding: 0; justify-content: center; }
 .is-collapsed .brand-mark, .is-collapsed .brand-name { display: none; }
-.is-collapsed .sidebar-toggle { margin-left: 0; }
+.is-collapsed .sidebar-toggle { margin-left: 0; background: rgba(255,255,255,.06); border-color: var(--line-strong); color: var(--text)!important; }
 .is-collapsed .new-asset-button { padding: 0; justify-content: center; }.is-collapsed .new-asset-button kbd, .is-collapsed .side-heading, .is-collapsed .side-nav-row span, .is-collapsed .side-nav-row b, .is-collapsed .space-row > span:nth-child(2), .is-collapsed .space-row b, .is-collapsed .add-space-link, .is-collapsed .spaces-heading .tiny-icon, .is-collapsed .sync-status, .is-collapsed .profile-row > span:nth-child(2), .is-collapsed .profile-row > svg { display: none; }.is-collapsed .side-nav-row, .is-collapsed .space-row { justify-content: center; padding: 0; }.is-collapsed .space-row { margin-bottom: 3px; }.is-collapsed .category-dot { width: 23px; height: 23px; }.is-collapsed .sidebar-bottom { padding-left: 4px; padding-right: 4px; }.is-collapsed .profile-row { justify-content: center; }
 
 .vault-workspace { min-width: 0; min-height: 100vh; display: flex; flex: 1; flex-direction: column; }
@@ -139,6 +141,9 @@ button:disabled { cursor: not-allowed; opacity: .72; }
 [data-theme="light"] .topbar { background: rgba(255,255,255,.4); }
 .mobile-brand { display: none; }
 .mobile-menu { display: none; }
+/* 只要侧栏处于收起状态（任意宽度），顶栏就显示“打开侧边栏”按钮。
+   恢复入口不再依赖侧栏内部按钮：即使竖条/抽屉被移出屏幕也一定能再打开。 */
+.vault-app.is-sidebar-collapsed .sidebar-open-button { display: inline-grid; }
 
 /* 移动端侧栏抽屉打开时的遮罩：桌面端始终隐藏（侧栏常驻，不遮挡内容）。 */
 .sidebar-backdrop { display: none; }
@@ -170,7 +175,7 @@ button:disabled { cursor: not-allowed; opacity: .72; }
 @keyframes appear { from { opacity: 0; } to { opacity: 1; } } @keyframes spin { to { transform: rotate(360deg); } } @keyframes toast-in { from { opacity: 0; transform: translate(-50%, 12px); } to { opacity: 1; transform: translate(-50%, 0); } }
 
 @media (max-width: 1190px) { .asset-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }.metric-grid { grid-template-columns: repeat(2, 1fr); }.activity-card { border-top: 1px solid var(--line); }.metric-card:nth-child(2) { border-right: 0; }.metric-card:nth-child(3) { border-top: 1px solid var(--line); }.topbar, .workspace-scroll { padding-left: 28px; padding-right: 28px; } }
-@media (max-width: 860px) { .vault-sidebar { position: fixed; top: 0; bottom: 0; left: 0; width: 255px; transform: translateX(-100%); box-shadow: 20px 0 55px rgba(0,0,0,.32); }.vault-sidebar.is-open { transform: translateX(0); }.vault-sidebar.is-collapsed { width: 255px; flex-basis: 255px; transform: translateX(-100%); }.vault-sidebar.is-collapsed .brand-row, .vault-sidebar.is-collapsed .side-nav-row, .vault-sidebar.is-collapsed .space-row, .vault-sidebar.is-collapsed .profile-row { justify-content: initial; padding: revert; }.vault-sidebar.is-collapsed .brand-mark, .vault-sidebar.is-collapsed .brand-name, .vault-sidebar.is-collapsed .sidebar-toggle, .vault-sidebar.is-collapsed .new-asset-button span, .vault-sidebar.is-collapsed .new-asset-button kbd, .vault-sidebar.is-collapsed .side-heading, .vault-sidebar.is-collapsed .side-nav-row span, .vault-sidebar.is-collapsed .side-nav-row b, .vault-sidebar.is-collapsed .space-row > span:nth-child(2), .vault-sidebar.is-collapsed .space-row b, .vault-sidebar.is-collapsed .add-space-link, .vault-sidebar.is-collapsed .spaces-heading .tiny-icon, .vault-sidebar.is-collapsed .sync-status, .vault-sidebar.is-collapsed .profile-row > span:nth-child(2), .vault-sidebar.is-collapsed .profile-row > svg { display: initial; }
+@media (max-width: 860px) { .vault-sidebar { position: fixed; top: 0; bottom: 0; left: 0; width: 255px; transform: translateX(-100%); box-shadow: 20px 0 55px rgba(0,0,0,.32); }.vault-sidebar.is-open { transform: translateX(0); }.vault-sidebar.is-collapsed { width: 255px; flex-basis: 255px; transform: translateX(-100%); }.vault-sidebar.is-collapsed .brand-row, .vault-sidebar.is-collapsed .side-nav-row, .vault-sidebar.is-collapsed .space-row, .vault-sidebar.is-collapsed .profile-row { justify-content: initial; padding: revert; }.vault-sidebar.is-collapsed .brand-mark, .vault-sidebar.is-collapsed .brand-name, .vault-sidebar.is-collapsed .new-asset-button span, .vault-sidebar.is-collapsed .new-asset-button kbd, .vault-sidebar.is-collapsed .side-heading, .vault-sidebar.is-collapsed .side-nav-row span, .vault-sidebar.is-collapsed .side-nav-row b, .vault-sidebar.is-collapsed .space-row > span:nth-child(2), .vault-sidebar.is-collapsed .space-row b, .vault-sidebar.is-collapsed .add-space-link, .vault-sidebar.is-collapsed .spaces-heading .tiny-icon, .vault-sidebar.is-collapsed .sync-status, .vault-sidebar.is-collapsed .profile-row > span:nth-child(2), .vault-sidebar.is-collapsed .profile-row > svg { display: initial; }
   .mobile-brand { display: flex; align-items: center; gap: 5px; margin-right: auto; font-size: 11px; letter-spacing: .08em; }.mobile-brand .brand-mark { width: 26px; transform: scale(.78); }
   .mobile-menu { display: inline-grid; flex: 0 0 auto; }
   .sidebar-backdrop { display: block; position: fixed; inset: 0; z-index: 4; background: rgba(4, 5, 8, .55); backdrop-filter: blur(2px); }

@@ -304,13 +304,13 @@ export default function VaultDashboard({ initialAssets, initialCategories, initi
       : "集中管理脚本、工具配置与技术资料。";
 
   return (
-    <div className="vault-app" data-theme={theme}>
+    <div className={`vault-app ${sidebarOpen ? "" : "is-sidebar-collapsed"}`} data-theme={theme}>
       {sidebarOpen && <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} aria-hidden="true" />}
       <aside className={`vault-sidebar ${sidebarOpen ? "is-open" : "is-collapsed"}`}>
         <div className="brand-row">
           <div className="brand-mark"><div className="brand-cube"><span /></div></div>
           {sidebarOpen && <div className="brand-name">CG <strong>VAULT</strong><small>流水线资产库</small></div>}
-          <button className="icon-button sidebar-toggle" onClick={() => setSidebarOpen((open) => !open)} aria-label={sidebarOpen ? "收起侧边栏" : "展开侧边栏"}>
+          <button className="icon-button sidebar-toggle" onClick={() => setSidebarOpen((open) => !open)} aria-label={sidebarOpen ? "收起侧边栏" : "展开侧边栏"} title={sidebarOpen ? "收起侧边栏" : "展开侧边栏"}>
             {sidebarOpen ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />}
           </button>
         </div>
@@ -369,7 +369,7 @@ export default function VaultDashboard({ initialAssets, initialCategories, initi
 
       <section className="vault-workspace">
         <header className="topbar">
-          <button className="icon-button mobile-menu" onClick={() => setSidebarOpen(true)} aria-label="打开侧边栏"><Menu size={18} /></button>
+          <button className="icon-button mobile-menu sidebar-open-button" onClick={() => setSidebarOpen(true)} aria-label="打开侧边栏" title="展开侧边栏"><Menu size={18} /></button>
           <div className="mobile-brand"><div className="brand-mark"><div className="brand-cube"><span /></div></div><b>CG VAULT</b></div>
           <div className="global-search">
             <Search size={18} />
