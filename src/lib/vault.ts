@@ -120,7 +120,7 @@ type AssetRecord = {
 
 type StoredRevision = { content: string; saved_at: string; revision: number; change_note: string; files?: ManagedFile[]; deploy?: DeployPlanDTO | null };
 type StoredText = { content: string; history: StoredRevision[] };
-type VaultConfig = { version: number; categories: CategoryRecord[]; assets: AssetRecord[] };
+type VaultConfig = { version: number; seeded: boolean; categories: CategoryRecord[]; assets: AssetRecord[] };
 type AliasConfig = { version: number; aliases: PathAliasDTO[] };
 type AssetInput = Record<string, unknown>;
 
@@ -315,8 +315,45 @@ function cleanFiles(value: unknown): ManagedFile[] {
     .slice(0, 40);
 }
 
+/**
+ * 用于判断“文件清单是否真的变了”。
+ * size 是磁盘 stat 的瞬时结果：服务端返回 DTO 时会把磁盘大小回填进 file.size，
+ * 客户端原样提交回来时不应被视为“用户改了内容”，否则只打开再保存一次就会无端升版本。
+ * 校验和/别名/路径/说明等字段才是用户登记的内容。
+ */
+function sameFilesForRevision(a: ManagedFile[], b: ManagedFile[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let index = 0; index < a.length; index += 1) {
+    const left = a[index];
+    const right = b[index];
+    if (
+      left.id !== right.id ||
+      left.name !== right.name ||
+      left.ext !== right.ext ||
+      left.category !== right.category ||
+      left.aliasKey !== right.aliasKey ||
+      left.path !== right.path ||
+      left.checksum !== right.checksum ||
+      left.checksumAlgo !== right.checksumAlgo ||
+      left.publishedAt !== right.publishedAt ||
+      left.note !== right.note
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+const ALLOWED_KINDS = new Set(["Snippet", "Executable", "Reference", "File"]);
+
+function requireKind(value: unknown, fallback: string) {
+  const kind = textValue(value, fallback).slice(0, 24);
+  if (!ALLOWED_KINDS.has(kind)) throw new VaultError(400, "不支持的资产类型，请刷新页面后重试。");
+  return kind;
+}
+
 function defaultConfig(): VaultConfig {
-  return { version: 2, categories: [], assets: [] };
+  return { version: 2, seeded: false, categories: [], assets: [] };
 }
 
 function toCategoryDTO(category: Record<string, unknown>): CategoryDTO {
@@ -334,7 +371,7 @@ function toCategoryDTO(category: Record<string, unknown>): CategoryDTO {
 
 function normalizeConfig(value: unknown): VaultConfig {
   if (!value || typeof value !== "object") return defaultConfig();
-  const raw = value as { version?: unknown; categories?: unknown; assets?: unknown };
+  const raw = value as { version?: unknown; seeded?: unknown; categories?: unknown; assets?: unknown };
   const categories = Array.isArray(raw.categories)
     ? raw.categories
         .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
@@ -380,7 +417,12 @@ function normalizeConfig(value: unknown): VaultConfig {
           };
         })
     : [];
-  return { version: typeof raw.version === "number" ? raw.version : 2, categories, assets };
+  // seeded 标记：只有“旧版本从未写过种子数据”的库才允许重新播种。
+  // 兼容历史文件：没有 seeded 字段但已经是 v2 且含有数据（分类/资产）的，视为已播种，
+  // 避免用户把资产全部删掉后刷新又被样例数据“复活”。
+  const version = typeof raw.version === "number" ? raw.version : 2;
+  const seeded = raw.seeded === true || (version >= 2 && (categories.length > 0 || assets.length > 0));
+  return { version, seeded, categories, assets };
 }
 
 async function readConfig() {
@@ -572,7 +614,8 @@ async function seedLibrarySamples() {
 export async function ensureVaultSeed() {
   await withWriteLock(async () => {
     const config = await readConfig();
-    if (config.categories.length && config.assets.length && config.version >= 2) return;
+    // 只在“从未播种”时执行；用户清空资产库后不应被样例数据再次填满。
+    if (config.seeded) return;
 
     const timestamp = now();
     const categories = config.categories.length
@@ -865,11 +908,11 @@ for image in bpy.data.images:
         });
       }
 
-      await saveConfig({ version: 2, categories, assets });
+      await saveConfig({ version: 2, seeded: true, categories, assets });
       return;
     }
 
-    await saveConfig({ ...config, categories });
+    await saveConfig({ ...config, categories, seeded: true });
   });
 }
 
@@ -936,7 +979,7 @@ export async function createAsset(input: AssetInput) {
   return withWriteLock(async () => {
     const config = await readConfig();
     const title = requireTitle(input.title);
-    const kind = textValue(input.kind, "Snippet").slice(0, 24);
+    const kind = requireKind(input.kind, "Snippet");
     const categoryId = typeof input.categoryId === "string" ? input.categoryId || null : null;
     if (categoryId && !config.categories.some((category) => category.id === categoryId)) throw new VaultError(400, "所选软件空间已不存在，请重新选择。");
     const files = cleanFiles(input.files);
@@ -979,7 +1022,7 @@ export async function createAsset(input: AssetInput) {
       lastOpenedAt: null,
     };
     await saveStoredText(contentFile, { content: typeof input.content === "string" ? input.content : "", history: [] });
-    await saveConfig({ version: 2, categories: config.categories, assets: [asset, ...config.assets] });
+    await saveConfig({ version: 2, seeded: config.seeded, categories: config.categories, assets: [asset, ...config.assets] });
     return buildAssetDTO(asset, config.categories, await getPathAliases(), await readStoredText(contentFile));
   });
 }
@@ -1001,7 +1044,7 @@ export async function updateAsset(id: string, input: AssetInput) {
     const categoryId = typeof input.categoryId === "string" ? input.categoryId || null : current.categoryId;
     if (categoryId && !config.categories.some((category) => category.id === categoryId)) throw new VaultError(400, "所选软件空间已不存在，请重新选择。");
 
-    const kind = textValue(input.kind, current.kind).slice(0, 24);
+    const kind = requireKind(input.kind, current.kind);
     const files = input.files === undefined ? current.files : cleanFiles(input.files);
     if (input.files !== undefined) await requireAliasesExist(files);
     const pkg = input.package === undefined ? current.package : {
@@ -1019,9 +1062,10 @@ export async function updateAsset(id: string, input: AssetInput) {
     });
     const content = typeof input.content === "string" ? input.content : stored.content;
     // 内容、文件清单、部署计划任一变，都应当生成新版本，保证版本号能代表完整状态。
+    // 注意文件清单比较必须忽略 stat 回填的 size 等瞬时字段（见 sameFilesForRevision）。
     const contentChanged =
       content !== stored.content
-      || JSON.stringify(shaped.files) !== JSON.stringify(current.files)
+      || !sameFilesForRevision(shaped.files, current.files)
       || JSON.stringify(shaped.deploy) !== JSON.stringify(current.deploy)
       || JSON.stringify(shaped.package) !== JSON.stringify(current.package);
 
@@ -1064,7 +1108,7 @@ export async function updateAsset(id: string, input: AssetInput) {
 
     if (contentChanged) await saveStoredText(current.contentFile, nextStored);
     config.assets[index] = updated;
-    await saveConfig({ version: 2, categories: config.categories, assets: config.assets });
+    await saveConfig({ version: 2, seeded: config.seeded, categories: config.categories, assets: config.assets });
     return buildAssetDTO(updated, config.categories, await getPathAliases(), contentChanged ? nextStored : stored);
   });
 }
@@ -1074,7 +1118,7 @@ export async function deleteAsset(id: string) {
     const config = await readConfig();
     const asset = config.assets.find((item) => item.id === id);
     if (!asset) throw new VaultError(404, "该资产不存在或已被删除。");
-    await saveConfig({ version: config.version, categories: config.categories, assets: config.assets.filter((item) => item.id !== id) });
+    await saveConfig({ version: config.version, seeded: config.seeded, categories: config.categories, assets: config.assets.filter((item) => item.id !== id) });
     try {
       await unlink(join(storedTextsPath, asset.contentFile));
     } catch (error) {
@@ -1102,7 +1146,7 @@ export async function createCategory(input: AssetInput): Promise<CategoryDTO> {
       createdAt: timestamp,
       updatedAt: timestamp,
     };
-    await saveConfig({ version: 2, categories: [...config.categories, category], assets: config.assets });
+    await saveConfig({ version: 2, seeded: config.seeded, categories: [...config.categories, category], assets: config.assets });
     return category;
   });
 }
@@ -1177,13 +1221,19 @@ export async function checkPaths(entries: unknown, withHash = false) {
       const raw = typeof entry === "string" ? { path: entry } : ((entry ?? {}) as Record<string, unknown>);
       const aliasKey = textValue(raw.aliasKey).toUpperCase() || null;
       const template = textValue(raw.path);
+      const parsed = parsePathTemplate(template);
+      // 规则：`$KEY/相对路径` / `{KEY}/相对路径` 或显式选中的别名 → 用别名根拼接；
+      // 已经是绝对路径 / UNC 的模板 → 原样使用，绝不再次拼进别名根（否则会变成
+      // “别名根 + 绝对路径”的双重拼接路径，校验结果永远是“缺失”）。
+      const usedKey = parsed.absolute ? null : (aliasKey ?? parsed.aliasKey);
+      const relative = usedKey ? (parsed.aliasKey ? parsed.relative : template.replace(/^[\\/]+/, "")) : template;
       const file: ManagedFile = {
         id: "check",
         name: template.split(/[\\/]/).pop() ?? template,
         ext: extOf(template),
         category: "其他",
-        aliasKey,
-        path: aliasKey ? template.replace(new RegExp(`^\\$?\\{?${aliasKey}\\}?[\\\\/]`), "") : template,
+        aliasKey: usedKey,
+        path: relative,
         size: null,
         checksum: null,
         checksumAlgo: null,
@@ -1213,13 +1263,15 @@ export async function scanDirectory(target: unknown, options: { extensions?: unk
   const aliasKey = textValue(raw.aliasKey).toUpperCase() || null;
   const template = textValue(raw.path);
   const parsed = parsePathTemplate(template);
-  const usedKey = aliasKey ?? parsed.aliasKey;
+  // 绝对路径 / UNC 原样浏览；其余情况用显式选中别名（或模板自带的 $KEY）拼接根目录。
+  const usedKey = parsed.absolute ? null : (aliasKey ?? parsed.aliasKey);
   if (!template && !usedKey) throw new VaultError(400, "请填写要浏览的目录路径，或先选择一个路径别名。");
   let dir = parsed.relative;
   if (usedKey) {
     const alias = aliases.find((item) => item.key === usedKey);
     if (!alias) throw new VaultError(400, `未定义路径别名 $${usedKey}。`);
-    dir = joinNative(alias.root, parsed.relative);
+    const relativePath = parsed.aliasKey ? parsed.relative : template.replace(/^[\\/]+/, "");
+    dir = joinNative(alias.root, relativePath);
   }
   if (!dir) throw new VaultError(400, "请填写要浏览的目录路径。");
   if (!existsSync(dir)) throw new VaultError(404, `目录不存在：${dir}`);

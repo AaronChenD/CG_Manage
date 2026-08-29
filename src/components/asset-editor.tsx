@@ -194,6 +194,8 @@ export default function AssetEditor({
   const [browseLoading, setBrowseLoading] = useState(false);
   const [browseError, setBrowseError] = useState<string | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
+  // 记录“打开时”的文件清单签名，用于判断用户是否真的改过文件，而不是一直显示“已修改”。
+  const [baselineFileSignature, setBaselineFileSignature] = useState<string | null>(id === null ? "" : null);
 
   const isFileAsset = draft.kind === "File";
   const isExecutable = draft.kind === "Executable";
@@ -205,13 +207,16 @@ export default function AssetEditor({
   const supportsFiles = isFileAsset || isScriptPackage;   // 文件清单
   const supportsTech = isFileAsset;                        // 帧范围/帧率/单位/上轴等交付元数据
   const supportsMediaKind = isFileAsset;                   // 资产细分（模型/动画/缓存…）
-  const supportsDeploy = isExecutable || draft.deploy !== null; // 部署与调用（含历史数据兜底）
+  // 部署与调用只对「可执行脚本」开放；其它类型服务端会丢弃 deploy，UI 不应继续展示一个
+  // 保存后必定丢失的配置区，否则用户会误以为配置已生效。
+  const supportsDeploy = isExecutable;
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
       if (!id) {
         setLoading(false);
+        setBaselineFileSignature("");
         titleRef.current?.focus();
         return;
       }
@@ -221,7 +226,9 @@ export default function AssetEditor({
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error ?? "无法打开资产。");
         if (cancelled) return;
-        setDraft(draftFromAsset(payload.asset));
+        const loaded = draftFromAsset(payload.asset);
+        setDraft(loaded);
+        setBaselineFileSignature(signatureOf(loaded.files));
         setHistory(payload.history ?? []);
       } catch (error) {
         if (!cancelled) onNotify(error instanceof Error ? error.message : "无法载入最新内容。", "error");
@@ -472,7 +479,8 @@ export default function AssetEditor({
   });
 
   const fileSignature = useMemo(() => signatureOf(draft.files), [draft.files]);
-  const dirtyFiles = isFileAsset && id !== null && draft.files.length > 0 && fileSignature !== "";
+  // 新建（id 为空）只要有文件就算已填写；编辑中则与打开时的清单对比，避免“无改动也提示已修改”。
+  const dirtyFiles = isFileAsset && (id === null ? fileSignature !== "" : baselineFileSignature !== null && fileSignature !== baselineFileSignature);
 
   return <div className="modal-layer" role="dialog" aria-modal="true" aria-label="资产编辑器">
     <div className="editor-modal">
