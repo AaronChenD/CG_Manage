@@ -162,7 +162,8 @@ export function parsePathTemplate(template: string): ParsedTemplate {
   const absolute = unc || raw.startsWith("/") || /^[A-Za-z]:[\\/]/.test(raw);
   const braceMatch = /^\{([A-Za-z0-9_.-]+)\}([\\/]|$)/.exec(raw);
   if (braceMatch) {
-    return { aliasKey: braceMatch[1].toUpperCase(), relative: raw.slice(braceMatch[0].length), absolute: true, unc, usesBraces: true };
+    // `${PUB}/model/x.fbx` 是“别名 + 相对路径”，并不是绝对路径。
+    return { aliasKey: braceMatch[1].toUpperCase(), relative: raw.slice(braceMatch[0].length).replace(/^[\\/]+/, ""), absolute: false, unc, usesBraces: true };
   }
   // 只有显式写 `$KEY/...` 才当作别名，避免把 `model/hero.fbx` 误判成 `$MODEL`。
   const dollarMatch = /^\$\{([A-Za-z_][A-Za-z0-9_.-]*)\}([\\/].*)?$|^\$([A-Za-z_][A-Za-z0-9_.-]*)([\\/].*)?$/.exec(raw);
@@ -171,7 +172,9 @@ export function parsePathTemplate(template: string): ParsedTemplate {
     const relative = String(dollarMatch[2] ?? dollarMatch[4] ?? "").replace(/^[\\/]+/, "");
     return { aliasKey: key, relative, absolute: false, unc: false, usesBraces: raw.startsWith("${") };
   }
-  return { aliasKey: null, relative: raw.replace(/^[\\/]+/, ""), absolute, unc, usesBraces: false };
+  // 没有别名前缀时原样保留（含绝对路径 / UNC 的开头分隔符），
+  // 否则 Windows 的 C:\ 与 POSIX 的 /home/... 会被剥离成错误路径。
+  return { aliasKey: null, relative: raw, absolute, unc, usesBraces: false };
 }
 
 /** 用于表单提示：这条路径会被解析成什么。 */

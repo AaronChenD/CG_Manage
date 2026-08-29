@@ -102,10 +102,13 @@ export default function PathAliasManager({
       return;
     }
     try {
+      // 直接把原始模板交给服务端解析（服务端会识别 $KEY/ 前缀并拼接别名根）。
+      // 之前这里传的是“解析后的绝对路径 + aliasKey”，会被再次拼进别名根，
+      // 导致 /root/<绝对路径> 的双重拼接，探测结果永远是“缺失”。
       const response = await fetch("/api/vault/files/check", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ entries: [{ aliasKey: parsedProbe.aliasKey, path: parsedProbe.aliasKey ? preview.resolved : probe }] }),
+        body: JSON.stringify({ entries: [{ aliasKey: parsedProbe.aliasKey, path: probe }] }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "校验失败。");

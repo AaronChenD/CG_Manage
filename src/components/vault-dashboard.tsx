@@ -28,8 +28,10 @@ import {
   Layers3,
   Link2,
   LoaderCircle,
+  Menu,
   Moon,
   PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   RefreshCw,
   Ruler,
@@ -206,6 +208,19 @@ export default function VaultDashboard({ initialAssets, initialCategories, initi
     return () => window.clearInterval(timer);
   }, []);
 
+  // 移动端（<=860px）侧栏是抽屉：默认收起，避免一进页面就被盖住；
+  // 从窄屏切回宽屏时恢复常驻侧栏。
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 860px)");
+    const sync = (matches: boolean) => setSidebarOpen(!matches);
+    sync(mq.matches);
+    const onChange = (event: MediaQueryListEvent) => sync(event.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
+  const openCreate = useCallback(() => setEditor({ open: true, asset: null }), []);
+
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -221,17 +236,13 @@ export default function VaultDashboard({ initialAssets, initialCategories, initi
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  });
+  }, [aliasOpen, categoryDialog, editor.open, openCreate]);
 
   useEffect(() => {
     if (!toast) return;
     const timer = window.setTimeout(() => setToast(null), 4200);
     return () => window.clearTimeout(timer);
   }, [toast]);
-
-  function openCreate() {
-    setEditor({ open: true, asset: null });
-  }
 
   const copy = async (key: string, text: string, label = "已复制到剪贴板。") => {
     try {
@@ -293,12 +304,15 @@ export default function VaultDashboard({ initialAssets, initialCategories, initi
       : "集中管理脚本、工具配置与技术资料。";
 
   return (
-    <div className="vault-app" data-theme={theme}>
+    <div className={`vault-app ${sidebarOpen ? "" : "is-sidebar-collapsed"}`} data-theme={theme}>
+      {sidebarOpen && <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} aria-hidden="true" />}
       <aside className={`vault-sidebar ${sidebarOpen ? "is-open" : "is-collapsed"}`}>
         <div className="brand-row">
           <div className="brand-mark"><div className="brand-cube"><span /></div></div>
           {sidebarOpen && <div className="brand-name">CG <strong>VAULT</strong><small>流水线资产库</small></div>}
-          <button className="icon-button sidebar-toggle" onClick={() => setSidebarOpen((open) => !open)} aria-label="收起侧边栏"><PanelLeftClose size={17} /></button>
+          <button className="icon-button sidebar-toggle" onClick={() => setSidebarOpen((open) => !open)} aria-label={sidebarOpen ? "收起侧边栏" : "展开侧边栏"} title={sidebarOpen ? "收起侧边栏" : "展开侧边栏"}>
+            {sidebarOpen ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />}
+          </button>
         </div>
 
         <button className="new-asset-button" onClick={openCreate}><Plus size={17} strokeWidth={2.5} /> {sidebarOpen && <span>新建资产</span>}<kbd>N</kbd></button>
@@ -355,6 +369,7 @@ export default function VaultDashboard({ initialAssets, initialCategories, initi
 
       <section className="vault-workspace">
         <header className="topbar">
+          <button className="icon-button mobile-menu sidebar-open-button" onClick={() => setSidebarOpen(true)} aria-label="打开侧边栏" title="展开侧边栏"><Menu size={18} /></button>
           <div className="mobile-brand"><div className="brand-mark"><div className="brand-cube"><span /></div></div><b>CG VAULT</b></div>
           <div className="global-search">
             <Search size={18} />
@@ -419,11 +434,12 @@ export default function VaultDashboard({ initialAssets, initialCategories, initi
             {/* 格式与可达性只对文件资产有意义，代码/脚本/链接下不展示，避免出现必然为空的筛选结果。 */}
             {(kindFilter === "All" || kindFilter === "File") && <div className="filter-row secondary-filters">
               <div className="filter-label"><FileArchive size={15} /> 格式细分</div>
-              {FORMAT_GROUPS.map((group) => <button key={group.key} className={`filter-chip tiny ${formatFilter === group.key ? "active" : ""}`} onClick={() => setFormatFilter((current) => {
-                const next = current === group.key ? null : group.key;
+              {FORMAT_GROUPS.map((group) => <button key={group.key} className={`filter-chip tiny ${formatFilter === group.key ? "active" : ""}`} onClick={() => {
+                const next = formatFilter === group.key ? null : group.key;
+                setFormatFilter(next);
+                // 选中某个格式组时自动切到文件资产视图，避免在代码类筛选下“必然为空”。
                 if (next) setKindFilter("File");
-                return next;
-              })} title={group.exts.map((ext) => `.${ext}`).join(" ")}>{group.label}</button>)}
+              }} title={group.exts.map((ext) => `.${ext}`).join(" ")}>{group.label}</button>)}
               <span className="filter-divider" />
               <div className="filter-label"><ScanLine size={15} /> 路径状态</div>
               {(["all", "present", "missing", "unchecked"] as StatusFilter[]).map((status) => <button key={status} className={`filter-chip tiny ${statusFilter === status ? "active" : ""}`} onClick={() => { setStatusFilter(status); if (status !== "all") setKindFilter("File"); }}>{status === "all" ? "全部" : status === "present" ? "可访问" : status === "missing" ? "缺失" : "未校验"}</button>)}
@@ -541,7 +557,17 @@ export default function VaultDashboard({ initialAssets, initialCategories, initi
         onClose={() => setEditor({ open: false, asset: null })}
       />}
 
-      {aliasOpen && <PathAliasManager aliases={aliases} usageCount={aliasUsage} onClose={() => setAliasOpen(false)} onChanged={setAliases} onNotify={notify} />}
+      {aliasOpen && <PathAliasManager
+        aliases={aliases}
+        usageCount={aliasUsage}
+        onClose={() => setAliasOpen(false)}
+        onChanged={(next) => {
+          setAliases(next);
+          // 别名根路径可能已变化，重新拉取快照以刷新文件的“存在/缺失”状态。
+          void refresh();
+        }}
+        onNotify={notify}
+      />}
 
       {categoryDialog && <div className="modal-layer compact-layer" role="dialog" aria-modal="true" aria-label="新建软件空间">
         <div className="category-modal">
