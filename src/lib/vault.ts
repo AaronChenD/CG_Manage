@@ -6,6 +6,7 @@ import { dirname, isAbsolute, join, relative, resolve as resolvePathname, sep } 
 import { extOf, extInfo, joinNative, parsePathTemplate, type PathAliasDTO } from "@/lib/asset-catalog";
 import type { DeployPlanDTO } from "@/lib/script-package";
 import { listTrash, moveToTrash, readDocument, removeFromTrash, writeDocument } from "@/lib/sqlite-store";
+import { ensureIndexFresh, queryAssetIds, relationalReport, type RelationalReport } from "@/lib/vault-index";
 
 export type VaultLink = { label: string; url: string };
 
@@ -16,6 +17,10 @@ export type FileStatus = {
   size: number | null;
   modifiedAt: string | null;
   error: string | null;
+  /** 相对登记基线的变更检测结果：true=磁盘已变更，false=与登记一致，null=无法判断（无基线或不可访问）。 */
+  changed: boolean | null;
+  /** 变更原因（例如「磁盘大小与登记不一致」）；未变更或无法判断时为 null。 */
+  changedReason: string | null;
 };
 
 export type ManagedFile = {
@@ -546,14 +551,14 @@ function resolvePath(file: ManagedFile, aliases: PathAliasDTO[]): FileStatus {
   const template = file.aliasKey ? `$${file.aliasKey}/${file.path}` : file.path;
   const alias = file.aliasKey ? aliases.find((item) => item.key.toUpperCase() === file.aliasKey?.toUpperCase()) : undefined;
   if (file.aliasKey && !alias) {
-    return { resolvedPath: template, exists: null, isDirectory: false, size: null, modifiedAt: null, error: `未定义路径别名 $${file.aliasKey}` };
+    return { resolvedPath: template, exists: null, isDirectory: false, size: null, modifiedAt: null, error: `未定义路径别名 $${file.aliasKey}`, changed: null, changedReason: null };
   }
   if (file.aliasKey && alias && !alias.enabled) {
-    return { resolvedPath: template, exists: null, isDirectory: false, size: null, modifiedAt: null, error: `路径别名 $${file.aliasKey} 已停用` };
+    return { resolvedPath: template, exists: null, isDirectory: false, size: null, modifiedAt: null, error: `路径别名 $${file.aliasKey} 已停用`, changed: null, changedReason: null };
   }
   const resolved = alias ? resolveAliasPath(alias, file.path) : file.path;
-  if (!resolved) return { resolvedPath: template, exists: null, isDirectory: false, size: null, modifiedAt: null, error: "路径不能越过别名根目录" };
-  return { resolvedPath: resolved, exists: null, isDirectory: false, size: null, modifiedAt: null, error: null };
+  if (!resolved) return { resolvedPath: template, exists: null, isDirectory: false, size: null, modifiedAt: null, error: "路径不能越过别名根目录", changed: null, changedReason: null };
+  return { resolvedPath: resolved, exists: null, isDirectory: false, size: null, modifiedAt: null, error: null, changed: null, changedReason: null };
 }
 
 async function statTarget(status: FileStatus): Promise<FileStatus> {
@@ -604,14 +609,37 @@ function summaryOf(files: ManagedFileDTO[]): FileSummary {
   );
 }
 
+/**
+ * 廉价的文件变更检测：用登记时记录的 size/checksum 与磁盘实况对比。
+ *  - 有登记大小且与磁盘不一致 → 判定「已变更」（不必重算哈希即可发现）。
+ *  - 有登记校验和但大小一致 → 视为「一致」，确切的哈希漂移需「校验并算校验和」做权威比对。
+ *  - 目录 / 缺失 / 无法访问 / 无登记基线 → 无法判断（null）。
+ */
+function detectFileChange(file: ManagedFile, status: FileStatus): { changed: boolean | null; changedReason: string | null } {
+  if (status.exists !== true || status.isDirectory) return { changed: null, changedReason: null };
+  const registeredSize = file.size;
+  const liveSize = status.size;
+  if (registeredSize == null && !file.checksum) return { changed: null, changedReason: null };
+  if (registeredSize != null && liveSize != null && registeredSize !== liveSize) {
+    return { changed: true, changedReason: `磁盘大小 ${liveSize} B 与登记 ${registeredSize} B 不一致` };
+  }
+  // 大小一致（或未登记大小）时，仅凭大小无法确认哈希是否漂移；视为一致，留待权威校验。
+  return { changed: false, changedReason: null };
+}
+
 async function hydrateFiles(files: ManagedFile[], aliases: PathAliasDTO[]): Promise<ManagedFileDTO[]> {
   const withPaths = files.map((file) => ({ file, status: resolvePath(file, aliases) }));
   const statuses = await Promise.all(withPaths.map((item) => statTarget(item.status)));
-  return withPaths.map((item, index) => ({
-    ...item.file,
-    size: item.file.size ?? statuses[index].size,
-    status: statuses[index],
-  }));
+  return withPaths.map((item, index) => {
+    const stat = statuses[index];
+    const change = detectFileChange(item.file, stat);
+    const status = { ...stat, ...change };
+    return {
+      ...item.file,
+      size: item.file.size ?? stat.size,
+      status,
+    };
+  });
 }
 
 async function buildAssetDTO(asset: AssetRecord, categories: CategoryRecord[], aliases: PathAliasDTO[], stored: StoredText): Promise<AssetDTO> {
@@ -927,10 +955,37 @@ for image in bpy.data.images:
   });
 }
 
-export async function getVaultSnapshot(options: { query?: string; page?: number; pageSize?: number } = {}) {
+export async function getVaultSnapshot(options: { query?: string; page?: number; pageSize?: number; kind?: string; categoryId?: string } = {}) {
   await ensureVaultSeed();
   const [config, aliases] = await Promise.all([readConfig(), getPathAliases()]);
   const categories = [...config.categories].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, "zh-CN"));
+
+  const hasQuery = Boolean(options.query?.trim());
+  const hasPaging = options.page != null || options.pageSize != null;
+  const hasFilter = Boolean(options.kind) || Boolean(options.categoryId);
+
+  // 显式搜索 / 分页 / 过滤：走 SQLite 关系表 + FTS5 全文索引，只水合当前页（服务端分页）。
+  if (hasQuery || hasPaging || hasFilter) {
+    ensureIndexFresh(config, aliases);
+    const result = queryAssetIds({
+      query: options.query,
+      kind: options.kind,
+      categoryId: options.categoryId,
+      page: options.page ?? 1,
+      pageSize: options.pageSize,
+    });
+    const byId = new Map(config.assets.map((asset) => [asset.id, asset]));
+    const pageAssets = result.ids.map((id) => byId.get(id)).filter((asset): asset is AssetRecord => Boolean(asset));
+    const assets = await Promise.all(pageAssets.map(async (asset) => buildAssetDTO(asset, categories, aliases, await readStoredText(asset.contentFile))));
+    return {
+      categories,
+      assets,
+      aliases,
+      pagination: { page: result.page, pageSize: result.pageSize, total: result.total, totalPages: result.totalPages },
+    };
+  }
+
+  // 全量加载：供前端本地筛选 / 排序 / 分页（含实时磁盘状态）。
   const assets = await Promise.all(
     config.assets.map(async (asset) => buildAssetDTO(asset, config.categories, aliases, await readStoredText(asset.contentFile))),
   );
@@ -938,12 +993,20 @@ export async function getVaultSnapshot(options: { query?: string; page?: number;
     if (a.isFavorite !== b.isFavorite) return a.isFavorite ? -1 : 1;
     return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
   });
-  const query = options.query?.trim().toLowerCase() ?? "";
-  const matched = query ? assets.filter((asset) => [asset.title, asset.content, asset.categoryName, asset.kind, ...asset.tags, ...asset.files.map((file) => `${file.path} ${file.name} ${file.checksum ?? ""}`)].join(" ").toLowerCase().includes(query)) : assets;
-  const pageSize = Math.min(100, Math.max(1, (options.pageSize ?? matched.length) || 1));
-  const page = Math.max(1, options.page ?? 1);
-  const start = (page - 1) * pageSize;
-  return { categories: categories.map((category) => ({ ...category })), assets: matched.slice(start, start + pageSize), aliases, pagination: { page, pageSize, total: matched.length, totalPages: Math.max(1, Math.ceil(matched.length / pageSize)) } };
+  return {
+    categories: categories.map((category) => ({ ...category })),
+    assets,
+    aliases,
+    pagination: { page: 1, pageSize: assets.length, total: assets.length, totalPages: 1 },
+  };
+}
+
+/** 关系表聚合报告（服务端 SQL 关联查询），供诊断与统计使用。 */
+export async function getVaultReport(): Promise<RelationalReport> {
+  await ensureVaultSeed();
+  const [config, aliases] = await Promise.all([readConfig(), getPathAliases()]);
+  ensureIndexFresh(config, aliases);
+  return relationalReport();
 }
 
 export async function getAssetById(id: string) {
@@ -1288,6 +1351,10 @@ export async function checkPaths(entries: unknown, withHash = false) {
       // “别名根 + 绝对路径”的双重拼接路径，校验结果永远是“缺失”）。
       const usedKey = parsed.absolute ? null : (aliasKey ?? parsed.aliasKey);
       const relative = usedKey ? (parsed.aliasKey ? parsed.relative : template.replace(/^[\\/]+/, "")) : template;
+      // 登记基线（可选）：传入后用于「文件是否变更」的对比。
+      const registeredSize = nullableNumber(raw.size);
+      const registeredChecksum = textValue(raw.checksum).slice(0, 128) || null;
+      const registeredAlgo = textValue(raw.checksumAlgo).slice(0, 16) || null;
       const file: ManagedFile = {
         id: "check",
         name: template.split(/[\\/]/).pop() ?? template,
@@ -1296,13 +1363,14 @@ export async function checkPaths(entries: unknown, withHash = false) {
         aliasKey: usedKey,
         path: relative,
         isDirectory: null,
-        size: null,
-        checksum: null,
-        checksumAlgo: null,
+        size: registeredSize,
+        checksum: registeredChecksum,
+        checksumAlgo: registeredAlgo,
         publishedAt: null,
         note: "",
       };
-      const status = await statTarget(resolvePath(file, aliases));
+      const stat = await statTarget(resolvePath(file, aliases));
+      const status = { ...stat, ...detectFileChange(file, stat) };
       let checksum: { digest: string; size: number; algorithm: string } | null = null;
       let hashError: string | null = null;
       if (withHash && status.exists && !status.isDirectory) {
@@ -1312,7 +1380,21 @@ export async function checkPaths(entries: unknown, withHash = false) {
           hashError = error instanceof VaultError ? error.message : "校验和计算失败。";
         }
       }
-      return { ...status, checksum: checksum?.digest ?? null, checksumAlgo: checksum?.algorithm ?? null, hashError };
+      // 校验和级变更：有登记校验和且重算了当前校验和时做权威对比。
+      const checksumChanged = registeredChecksum && checksum ? registeredChecksum.toLowerCase() !== checksum.digest.toLowerCase() : null;
+      const changed = checksumChanged != null ? (checksumChanged || status.changed) : status.changed;
+      const changedReason = checksumChanged
+        ? `校验和已变化：${(registeredChecksum ?? "").slice(0, 10)}… → ${(checksum?.digest ?? "").slice(0, 10)}…`
+        : status.changedReason;
+      return {
+        ...status,
+        changed,
+        changedReason,
+        checksum: checksum?.digest ?? null,
+        checksumAlgo: checksum?.algorithm ?? null,
+        checksumChanged,
+        hashError,
+      };
     }),
   );
   return results;

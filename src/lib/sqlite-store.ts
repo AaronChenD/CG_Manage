@@ -11,13 +11,24 @@ function db() {
     database = new DatabaseSync(databasePath);
     database.exec(`PRAGMA journal_mode = WAL;
       PRAGMA synchronous = NORMAL;
+      PRAGMA foreign_keys = ON;
       CREATE TABLE IF NOT EXISTS documents (
         path TEXT PRIMARY KEY,
         json TEXT NOT NULL,
         updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS trash_assets (
+        asset_id TEXT PRIMARY KEY,
+        snapshot_json TEXT NOT NULL,
+        deleted_at TEXT NOT NULL
       );`);
   }
   return database;
+}
+
+/** 供关系索引层（vault-index）复用的共享数据库句柄。 */
+export function getDb() {
+  return db();
 }
 
 export function readDocument<T>(path: string, fallback: T): T {

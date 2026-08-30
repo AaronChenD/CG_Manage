@@ -7,7 +7,15 @@ export async function GET(request: Request) {
   try {
     await ensureVaultSeed();
     const url = new URL(request.url);
-    return Response.json(await getVaultSnapshot({ query: url.searchParams.get("q") ?? "", page: Number(url.searchParams.get("page") ?? 1), pageSize: Number(url.searchParams.get("pageSize") ?? 0) || undefined }));
+    return Response.json(
+      await getVaultSnapshot({
+        query: url.searchParams.get("q") ?? "",
+        kind: url.searchParams.get("kind") ?? undefined,
+        categoryId: url.searchParams.get("categoryId") ?? undefined,
+        page: Number(url.searchParams.get("page") ?? 0) || undefined,
+        pageSize: Number(url.searchParams.get("pageSize") ?? 0) || undefined,
+      }),
+    );
   } catch (error) {
     return errorResponse(error, "代码库数据加载失败。");
   }

@@ -58,6 +58,23 @@
 .status-pill.missing { color: #ffa8b3; background: rgba(255,124,139,.14); }
 .status-pill.error { color: #ffc48a; background: rgba(255,173,102,.14); }
 .status-pill.unknown { color: var(--faint); }
+.status-pill.changed { color: #ffd166; background: rgba(255,209,102,.14); }
+
+/* 分页控件 */
+.pagination-bar { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 18px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,.015); flex-wrap: wrap; }
+.pagination-meta { color: var(--faint); font-size: 10px; white-space: nowrap; }
+.pagination-controls { display: flex; align-items: center; gap: 3px; }
+.page-button { min-width: 26px; height: 26px; display: inline-grid; place-items: center; padding: 0 6px; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); background: transparent; font-size: 10px; transition: color .14s, border-color .14s, background .14s; }
+.page-button:hover:not(:disabled) { color: var(--text); border-color: var(--line-strong); background: var(--surface-hover); }
+.page-button.active { color: #e6dcff; border-color: rgba(167,139,250,.4); background: rgba(139,92,246,.2); }
+.page-button:disabled { opacity: .4; cursor: default; }
+.page-ellipsis { color: var(--faint); font-size: 10px; padding: 0 3px; }
+.rotate-90 { transform: rotate(90deg); }
+.rotate-270 { transform: rotate(-90deg); }
+.page-size-select { height: 26px; padding: 0 6px; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); background: transparent; font-size: 10px; outline: none; }
+[data-theme="light"] .page-size-select { background: #fff; color: #1b2230; }
+[data-theme="light"] .page-button { background: #fff; }
+[data-theme="light"] .pagination-bar { background: #f6f7f9; }
 
 /* 卡片中的文件预览 */
 .asset-card.is-file { border-color: rgba(120,182,247,.14); }

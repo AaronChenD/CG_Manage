@@ -55,6 +55,9 @@ export type FileDraft = {
   /** 最近一次磁盘校验返回的 isDirectory（真实形态，优先于手动标记）。 */
   statusDirectory?: boolean | null;
   modifiedAt?: string | null;
+  /** 相对登记基线的变更检测结果。 */
+  changed?: boolean | null;
+  changedReason?: string | null;
 };
 
 export type EditorDraft = {
@@ -94,6 +97,8 @@ function fileFromDTO(file: ManagedFileDTO): FileDraft {
     statusError: file.status.error,
     statusDirectory: file.status.isDirectory ?? null,
     modifiedAt: file.status.modifiedAt,
+    changed: file.status.changed,
+    changedReason: file.status.changedReason,
   };
 }
 
@@ -289,12 +294,19 @@ export default function AssetEditor({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           withHash,
-          entries: usable.map((file) => ({ aliasKey: file.aliasKey, path: file.aliasKey ? file.path : file.path || file.resolvedPath })),
+          entries: usable.map((file) => ({
+            aliasKey: file.aliasKey,
+            path: file.aliasKey ? file.path : file.path || file.resolvedPath,
+            // 带上登记基线，服务端据此判断「文件是否已变更」。
+            size: file.size,
+            checksum: file.checksum,
+            checksumAlgo: file.checksumAlgo,
+          })),
         }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "路径校验失败。");
-      const statuses = (result.results ?? []) as (NonNullable<ManagedFileDTO["status"]> & { checksum: string | null; checksumAlgo: string | null; hashError: string | null })[];
+      const statuses = (result.results ?? []) as (NonNullable<ManagedFileDTO["status"]> & { checksum: string | null; checksumAlgo: string | null; hashError: string | null; checksumChanged: boolean | null })[];
       const statusById = new Map(usable.map((file, index) => [file.id, statuses[index]]));
       setDraft((current) => ({
         ...current,
@@ -313,6 +325,8 @@ export default function AssetEditor({
             size: status.size ?? file.size,
             checksum: status.checksum ?? file.checksum,
             checksumAlgo: status.checksumAlgo ?? file.checksumAlgo,
+            changed: status.changed,
+            changedReason: status.changedReason,
           };
         }),
       }));
@@ -320,8 +334,9 @@ export default function AssetEditor({
       const missing = statuses.filter((status) => status.exists === false).length;
       const failed = statuses.filter((status) => status.error).length;
       const hashMiss = withHash ? statuses.filter((status) => status.hashError).length : 0;
-      const summary = `校验完成：存在 ${present} · 缺失 ${missing}${failed ? ` · 无法访问 ${failed}` : ""}${hashMiss ? ` · 未算校验和 ${hashMiss}` : ""}`;
-      onNotify(summary, missing || failed ? "error" : "success");
+      const changedCount = statuses.filter((status) => status.changed === true).length;
+      const summary = `校验完成：存在 ${present} · 缺失 ${missing}${changedCount ? ` · 已变更 ${changedCount}` : ""}${failed ? ` · 无法访问 ${failed}` : ""}${hashMiss ? ` · 未算校验和 ${hashMiss}` : ""}`;
+      onNotify(summary, missing || failed ? "error" : changedCount ? "error" : "success");
     } catch (error) {
       onNotify(error instanceof Error ? error.message : "路径校验失败。", "error");
     } finally {
@@ -573,6 +588,7 @@ export default function AssetEditor({
                     {isDir ? <i className="dir-badge"><Folder size={11} /> 目录</i> : file.ext ? <i className="ext-badge strong">{file.ext}</i> : <i className="dir-badge muted-badge">文件</i>}
                     <span className="path-template" title={file.resolvedPath ?? templateForDisplay(file.aliasKey, file.path)}>{templateForDisplay(file.aliasKey, file.path) || "（未填写路径）"}</span>
                     <span className={`status-pill ${tone}`}>{file.statusError ?? (tone === "present" ? (isDir ? "目录存在" : "路径存在") : tone === "missing" ? "路径缺失" : "未校验")}</span>
+                    {file.changed === true && <span className="status-pill changed" title={file.changedReason ?? "磁盘文件与登记信息不一致"}><i />已变更</span>}
                     <span className="size-text">{formatBytes(file.size)}</span>
                     {file.checksum && <code className="hash-text" title={`${file.checksumAlgo ?? "md5"}: ${file.checksum}`}>{(file.checksumAlgo ?? "md5").toUpperCase()} {file.checksum.slice(0, 10)}…</code>}
                     {file.resolvedPath && <button type="button" className="icon-tiny" title="复制服务器真实路径" onClick={() => void navigator.clipboard.writeText(file.resolvedPath ?? "").then(() => onNotify("真实路径已复制。")).catch(() => onNotify("剪贴板不可用。", "error"))}><Copy size={13} /></button>}

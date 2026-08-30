@@ -1,8 +1,8 @@
-# CG Vault（本地 JSON 版）
+# CG Vault（本地 SQLite 版）
 
-面向 CG 技术美术的本地资产库：统一管理 **脚本代码** 与 **CG 文件资产**（FBX / BVH / ABC / USD / 工程文件等），带路径别名、可达性校验、标签搜索与历史版本。
+面向 CG 技术美术的本地资产库：统一管理 **脚本代码** 与 **CG 文件资产**（FBX / BVH / ABC / USD / 工程文件等），带路径别名、可达性校验、标签搜索、全文检索与历史版本。
 
-数据全部保存在项目目录的 JSON 文件里，**不需要 PostgreSQL、Drizzle 或任何数据库**。
+数据以 **JSON 文档** 的形式保存在本地 SQLite 数据库 `data/cg-vault.sqlite` 里，**不需要 PostgreSQL 或 Drizzle**。历史遗留的 `config/*.json` 与 `stored_texts/*.json` 会在首次运行时自动导入 SQLite，之后以数据库为准。
 
 ## 本地 Windows 运行
 
@@ -84,6 +84,12 @@ CG Vault 会用**运行服务的那台机器**的文件系统真实执行 `stat`
 
 编辑器里的「校验全部」批量核对；「校验并算 SHA-256」会对 64 MB 以下的文件计算 SHA-256 并记录，用作交付一致性凭据；历史 MD5 记录仍可读取。
 
+**文件变更状态**：登记了 size 或 SHA-256 的文件，服务端会把磁盘实况与登记基线对比——
+
+- 磁盘大小与登记不一致 → 标记「已变更」并给出原因；
+- 「校验并算 SHA-256」时会做校验和级对比，发现哈希漂移即报「校验和已变化」；
+- 首页卡片 / 表格 / 编辑器都会显示「已变更」徽标，便于发现交付物被悄悄改动。
+
 因此把 CG Vault 部署在能访问 NAS 的机器上（工作站 / 内网服务器 / NAS 本机）最有意义。
 
 ## 格式与筛选
@@ -91,6 +97,15 @@ CG Vault 会用**运行服务的那台机器**的文件系统真实执行 `stat`
 格式按扩展名自动识别（fbx、abc、usd、ma、png……），用于徽标与搜索；无需手动归类，细节写进描述即可。
 
 顶部的「资产类型」与「路径状态」筛选可与软件空间组合使用；搜索框支持标题、标签、正文、路径与校验和。
+
+## SQLite 全文索引与分页
+
+资产数据会派生到 SQLite 的关系表（`assets` / `asset_files` / `categories` / `path_aliases` / `asset_revisions`）与 **FTS5 全文索引**（trigram 分词，兼顾英文与中文子串检索）中，这些表可随时重建、不含权威数据：
+
+- `GET /api/vault?q=…&kind=…&categoryId=…&page=…&pageSize=…`：服务端全文检索 + 过滤 + 分页，只水合当前页，适合上千条资产的大库。
+- 不足 3 个字符的查询（trigram 无法命中）自动回退到 `LIKE` 子串匹配，保证中文 1–2 字词也能搜到。
+- `GET /api/vault/report`：关系表聚合报告（别名引用、分类/格式统计、缺失校验和、重复项）。
+- 首页的资产列表自带分页控件（每页条数、页码、上一页/下一页），筛选或搜索后自动回到第一页。
 
 ## 版本与并发保护
 
@@ -112,9 +127,10 @@ CG Vault 会用**运行服务的那台机器**的文件系统真实执行 `stat`
 | GET / PATCH / DELETE | `/api/vault/assets/{id}` | 资产详情与历史 / 保存 / 删除 |
 | GET / POST | `/api/vault/path-aliases` | 别名列表 / 新建 |
 | PATCH / DELETE | `/api/vault/path-aliases/{id}` | 修改 / 删除别名 |
-| POST | `/api/vault/files/check` | 批量路径校验，可选 `withHash` |
+| POST | `/api/vault/files/check` | 批量路径校验，可选 `withHash`；带登记基线时可检测「文件变更」 |
 | POST | `/api/vault/files/scan` | 目录浏览 |
 | POST | `/api/vault/categories` | 新建软件空间 |
+| GET | `/api/vault/report` | 关系表聚合报告（SQL 关联查询） |
 
 ## 备份与恢复
 
@@ -127,10 +143,7 @@ npm run restore -- data/backups/cg-vault-xxxx.sqlite
 
 恢复前会自动保留当前数据库为 `cg-vault.sqlite.before-restore.bak`。
 
-```powershell
-Copy-Item .\config .\backup\config -Recurse
-Copy-Item .\stored_texts .\backup\stored_texts -Recurse
-```
+> 注意：数据现在以 SQLite 数据库为准，首次写入后 `config/` 与 `stored_texts/` 里的 JSON 文件不再同步更新，手动复制这两个目录无法得到最新数据。请统一使用 `npm run backup` / `npm run restore`。
 
 ## 重置为初始示例数据
 

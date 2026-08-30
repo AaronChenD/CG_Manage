@@ -124,6 +124,8 @@ export default function VaultDashboard({ initialAssets, initialCategories, initi
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [search, setSearch] = useState("");
   const [sortMode, setSortMode] = useState<SortMode>("updated");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(24);
   const [view, setView] = useState<ViewMode>("grid");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
@@ -183,6 +185,18 @@ export default function VaultDashboard({ initialAssets, initialCategories, initi
         return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
       });
   }, [activeCategory, assets, kindFilter, search, sortMode, statusFilter]);
+
+  // 筛选 / 排序 / 搜索变化时回到第一页（在渲染期调整状态的官方模式，避免 effect 内 setState）。
+  const filterKey = `${activeCategory}|${kindFilter}|${statusFilter}|${search}|${sortMode}`;
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
+  if (prevFilterKey !== filterKey) {
+    setPrevFilterKey(filterKey);
+    setPage(1);
+  }
+
+  const totalPages = Math.max(1, Math.ceil(filteredAssets.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageItems = filteredAssets.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const refresh = useCallback(async () => {
     setIsRefreshing(true);
@@ -468,7 +482,7 @@ export default function VaultDashboard({ initialAssets, initialCategories, initi
 
             {!filteredAssets.length ? <div className="empty-state"><div><Inbox size={28} /></div><h3>没有找到资产</h3><p>换个关键词，或为当前空间新建第一条资产。</p><button className="small-primary" onClick={openCreate}><Plus size={15} /> 新建资产</button></div>
               : view === "grid" ? <div className="asset-grid">
-              {filteredAssets.map((asset) => {
+              {pageItems.map((asset) => {
                 const status = assetStatus(asset);
                 const isFile = asset.kind === "File";
                 return <article className={`asset-card ${isFile ? "is-file" : ""}`} key={asset.id} onClick={() => setEditor({ open: true, asset })}>
@@ -505,7 +519,7 @@ export default function VaultDashboard({ initialAssets, initialCategories, initi
               <table className="asset-table">
                 <thead><tr><th className="col-asset">资产 / 文件</th><th className="col-kind">语言 / 类别</th><th className="col-fmt">格式</th><th className="col-size">大小</th><th className="col-path">路径（别名 / 相对）</th><th className="col-status">状态</th><th className="col-ver">版本</th><th className="col-act">操作</th></tr></thead>
                 <tbody>
-                  {filteredAssets.map((asset) => {
+                  {pageItems.map((asset) => {
                     const isFile = asset.kind === "File";
                     const open = Boolean(expanded[asset.id]);
                     const primary = asset.files[0];
@@ -552,6 +566,30 @@ export default function VaultDashboard({ initialAssets, initialCategories, initi
                 </tbody>
               </table>
             </div>}
+
+            {filteredAssets.length > 0 && (
+              <div className="pagination-bar">
+                <div className="pagination-meta">共 {filteredAssets.length} 条 · 第 {currentPage} / {totalPages} 页</div>
+                <div className="pagination-controls">
+                  <button className="page-button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={currentPage <= 1} aria-label="上一页"><ChevronDown size={15} className="rotate-90" /></button>
+                  {(() => {
+                    const pages: number[] = [];
+                    const start = Math.max(1, currentPage - 2);
+                    const end = Math.min(totalPages, currentPage + 2);
+                    for (let p = start; p <= end; p += 1) pages.push(p);
+                    return <>
+                      {start > 1 && <><button className="page-button" onClick={() => setPage(1)}>1</button>{start > 2 && <span className="page-ellipsis">…</span>}</>}
+                      {pages.map((p) => <button key={p} className={`page-button ${p === currentPage ? "active" : ""}`} onClick={() => setPage(p)} aria-current={p === currentPage ? "page" : undefined}>{p}</button>)}
+                      {end < totalPages && <>{end < totalPages - 1 && <span className="page-ellipsis">…</span>}<button className="page-button" onClick={() => setPage(totalPages)}>{totalPages}</button></>}
+                    </>;
+                  })()}
+                  <button className="page-button" onClick={() => setPage((current) => Math.min(totalPages, current + 1))} disabled={currentPage >= totalPages} aria-label="下一页"><ChevronDown size={15} className="rotate-270" /></button>
+                </div>
+                <select className="page-size-select" value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }} aria-label="每页条数">
+                  {[12, 24, 48, 96].map((size) => <option key={size} value={size}>每页 {size} 条</option>)}
+                </select>
+              </div>
+            )}
           </section>
 
           <section className="tips-strip">
