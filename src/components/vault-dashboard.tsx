@@ -135,6 +135,10 @@ export default function VaultDashboard({ initialAssets, initialCategories, initi
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [toast, setToast] = useState<Toast>(null);
+  const [trashOpen, setTrashOpen] = useState(false);
+  const [duplicateOpen, setDuplicateOpen] = useState(false);
+  const [duplicateGroups, setDuplicateGroups] = useState<{ paths: { path: string; items: { assetTitle: string }[] }[]; checksums: { checksum: string; items: { assetTitle: string; path: string }[] }[] }>({ paths: [], checksums: [] });
+  const [trashItems, setTrashItems] = useState<{ assetId: string; deletedAt: string; snapshot: { asset?: { title?: string } } }[]>([]);
   const [clientNow, setClientNow] = useState(0);
   const searchInput = useRef<HTMLInputElement>(null);
 
@@ -215,6 +219,30 @@ export default function VaultDashboard({ initialAssets, initialCategories, initi
   }, []);
 
   const openCreate = useCallback(() => setEditor({ open: true, asset: null }), []);
+
+  const inspectDuplicates = useCallback(async () => {
+    try {
+      const response = await fetch("/api/vault/duplicates", { cache: "no-store" });
+      if (!response.ok) throw new Error("重复检查失败。");
+      const result = await response.json() as { paths?: { path: string; items: { assetTitle: string }[] }[]; checksums?: { checksum: string; items: { assetTitle: string; path: string }[] }[] };
+      setDuplicateGroups({ paths: result.paths ?? [], checksums: result.checksums ?? [] });
+      setDuplicateOpen(true);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "重复检查失败。", "error");
+    }
+  }, [notify]);
+
+  const inspectTrash = useCallback(async () => {
+    try {
+      const response = await fetch("/api/vault/trash", { cache: "no-store" });
+      if (!response.ok) throw new Error("回收站读取失败。");
+      const result = await response.json() as { items?: { assetId: string; deletedAt: string; snapshot: { asset?: { title?: string } } }[] };
+      setTrashItems(result.items ?? []);
+      setTrashOpen(true);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "回收站读取失败。", "error");
+    }
+  }, [notify]);
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
@@ -351,6 +379,12 @@ export default function VaultDashboard({ initialAssets, initialCategories, initi
             <button className="side-nav-row" onClick={() => setAliasOpen(true)}>
               <FolderTree size={17} /><span>路径别名</span><b>{aliases.length}</b>
             </button>
+            <button className="side-nav-row" onClick={() => void inspectDuplicates()}>
+              <ScanLine size={17} /><span>重复检测</span><b>检查</b>
+            </button>
+            <button className="side-nav-row" onClick={() => void inspectTrash()}>
+              <Inbox size={17} /><span>回收站</span><b>查看</b>
+            </button>
             <div className="alias-mini-list">
               {aliases.slice(0, 3).map((alias) => <span key={alias.id} className={`alias-mini ${alias.enabled ? "" : "off"}`} title={alias.root}><i>${alias.key}</i>{parsePathTemplate(`$${alias.key}`).aliasKey}{aliasUsage[alias.key] ? ` · ${aliasUsage[alias.key]}` : ""}</span>)}
               {aliases.length > 3 && <button onClick={() => setAliasOpen(true)}>+{aliases.length - 3} 个别名</button>}
@@ -360,7 +394,7 @@ export default function VaultDashboard({ initialAssets, initialCategories, initi
         </div>
 
         <div className="sidebar-bottom">
-          <div className="sync-status"><span className="online-pulse" /><span>本地 JSON 已同步</span><small>config/</small></div>
+          <div className="sync-status"><span className="online-pulse" /><span>本地 SQLite 已同步</span><small>data/cg-vault.sqlite</small></div>
           <button className="profile-row"><span className="profile-avatar">TA</span>{sidebarOpen && <span><b>陈技术</b><small>技术美术 · 管线组</small></span>}<FolderCheck size={16} /></button>
         </div>
       </aside>
@@ -556,6 +590,10 @@ export default function VaultDashboard({ initialAssets, initialCategories, initi
         }}
         onNotify={notify}
       />}
+
+      {duplicateOpen && <div className="modal-layer compact-layer" role="dialog" aria-modal="true" aria-label="重复检测"><div className="category-modal"><header><div><div className="modal-mini-icon"><ScanLine size={18} /></div><h2>重复检测</h2><p>检查登记路径和已保存的 SHA-256。</p></div><button className="icon-button" onClick={() => setDuplicateOpen(false)} aria-label="关闭"><X size={18} /></button></header><div className="trash-list">{!duplicateGroups.paths.length && !duplicateGroups.checksums.length ? <p>未发现重复项目。</p> : <>{duplicateGroups.paths.map((group) => <div className="expand-file" key={`path-${group.path}`}><b className="expand-name">重复路径：{group.path}</b><span>{group.items.map((item) => item.assetTitle).join("、")}</span></div>)}{duplicateGroups.checksums.map((group) => <div className="expand-file" key={`hash-${group.checksum}`}><b className="expand-name">相同 SHA-256：{group.checksum.slice(0, 16)}…</b><span>{group.items.map((item) => item.assetTitle).join("、")}</span></div>)}</>}</div><footer><button className="cancel-button" onClick={() => setDuplicateOpen(false)}>关闭</button></footer></div></div>}
+
+      {trashOpen && <div className="modal-layer compact-layer" role="dialog" aria-modal="true" aria-label="回收站"><div className="category-modal"><header><div><div className="modal-mini-icon"><Inbox size={18} /></div><h2>回收站</h2><p>资产可恢复；永久删除后无法撤回。</p></div><button className="icon-button" onClick={() => setTrashOpen(false)} aria-label="关闭"><X size={18} /></button></header><div className="trash-list">{!trashItems.length ? <p>回收站为空。</p> : trashItems.map((item) => <div className="expand-file" key={item.assetId}><b className="expand-name">{item.snapshot.asset?.title ?? "未命名资产"}</b><span className="expand-cat">{new Date(item.deletedAt).toLocaleString("zh-CN")}</span><button className="ghost-tiny" onClick={async () => { const response = await fetch("/api/vault/trash", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: item.assetId }) }); if (!response.ok) { notify("恢复失败。", "error"); return; } setTrashItems((items) => items.filter((entry) => entry.assetId !== item.assetId)); await refresh(); notify("资产已恢复。"); }}>恢复</button><button className="ghost-tiny" onClick={async () => { if (!window.confirm("永久删除该资产？")) return; const response = await fetch("/api/vault/trash", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: item.assetId }) }); if (response.ok) { setTrashItems((items) => items.filter((entry) => entry.assetId !== item.assetId)); notify("资产已永久删除。"); } else notify("永久删除失败。", "error"); }}>永久删除</button></div>)}</div><footer><button className="cancel-button" onClick={() => setTrashOpen(false)}>关闭</button></footer></div></div>}
 
       {categoryDialog && <div className="modal-layer compact-layer" role="dialog" aria-modal="true" aria-label="新建软件空间">
         <div className="category-modal">

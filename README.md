@@ -82,7 +82,7 @@ CG Vault 会用**运行服务的那台机器**的文件系统真实执行 `stat`
 - 缺失 → 标记「路径缺失」，侧栏汇总缺失数量，可一键「重新扫描磁盘」
 - 无权限或网络盘未挂载 → 标记「无法访问」并给出原因
 
-编辑器里的「校验全部」批量核对；「校验并算 MD5」会对 64 MB 以下的文件计算 MD5 并记录，用作交付一致性凭据。
+编辑器里的「校验全部」批量核对；「校验并算 SHA-256」会对 64 MB 以下的文件计算 SHA-256 并记录，用作交付一致性凭据；历史 MD5 记录仍可读取。
 
 因此把 CG Vault 部署在能访问 NAS 的机器上（工作站 / 内网服务器 / NAS 本机）最有意义。
 
@@ -118,7 +118,14 @@ CG Vault 会用**运行服务的那台机器**的文件系统真实执行 `stat`
 
 ## 备份与恢复
 
-停止服务后复制 `config/` 与 `stored_texts/` 即可（`asset_library/` 只是示例文件）。
+SQLite 数据库位于 `data/cg-vault.sqlite`。建议使用内置命令备份（`asset_library/` 只是示例文件）：
+
+```powershell
+npm run backup
+npm run restore -- data/backups/cg-vault-xxxx.sqlite
+```
+
+恢复前会自动保留当前数据库为 `cg-vault.sqlite.before-restore.bak`。
 
 ```powershell
 Copy-Item .\config .\backup\config -Recurse
@@ -140,9 +147,15 @@ Remove-Item .\stored_texts\*.json -ErrorAction SilentlyContinue
 `src/app/layout.tsx` 已在 `<html>` 上加 `suppressHydrationWarning`（只作用于该层属性）。
 本项目也避免在渲染期直接使用 `Date.now()` 与区域化时间格式，时间均在客户端挂载后计算。
 
+## 访问权限与备份
+
+默认情况下，运行服务的本机拥有读写权限，其他机器只能读取和搜索，所有写入 API 会返回 403。反向代理部署时必须正确传递 `x-forwarded-for` 或 `x-real-ip`；仅在明确受信任的内网环境中才设置 `CG_ALLOW_REMOTE_WRITE=true` 放开远程写入。
+
+每次修改 JSON 前会在同目录保留上一份 `.bak` 文件。建议定期复制 `config/` 与 `stored_texts/` 到独立备份位置。
+
 ## 后续可选升级
 
-1. 认证与只读分享链接（当前无登录，任何能访问端口的人都能读写）
+1. 只读分享链接与更细粒度用户权限
 2. 索引与全文检索加速（资产上千条时考虑 SQLite / FTS）
 3. 真正的文件版本库（LFS 或对象存储 + 校验和对比）
 4. DCC 插件：Maya / Houdini / Blender 内直接搜索与推送代码、下载文件

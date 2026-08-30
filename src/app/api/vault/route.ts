@@ -3,10 +3,11 @@ import { errorResponse } from "@/lib/api-error";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     await ensureVaultSeed();
-    return Response.json(await getVaultSnapshot());
+    const url = new URL(request.url);
+    return Response.json(await getVaultSnapshot({ query: url.searchParams.get("q") ?? "", page: Number(url.searchParams.get("page") ?? 1), pageSize: Number(url.searchParams.get("pageSize") ?? 0) || undefined }));
   } catch (error) {
     return errorResponse(error, "代码库数据加载失败。");
   }

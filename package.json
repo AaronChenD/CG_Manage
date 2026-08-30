@@ -1,12 +1,17 @@
 {
   "name": "nextjs-postgresql-template",
   "private": true,
+  "engines": { "node": ">=22.5.0" },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "backup": "node scripts/backup.mjs",
+    "restore": "node scripts/restore.mjs",
+    "db:init": "node scripts/init-schema.mjs",
+    "verify-data": "node scripts/verify-data.mjs"
   },
   "dependencies": {
     "dotenv": "17.3.1",

@@ -1,0 +1,22 @@
+import { mkdirSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
+import { join } from "node:path";
+
+const file = join(process.cwd(), "data", "cg-vault.sqlite");
+mkdirSync(join(process.cwd(), "data"), { recursive: true });
+const db = new DatabaseSync(file);
+db.exec(`PRAGMA journal_mode=WAL;
+CREATE TABLE IF NOT EXISTS documents(path TEXT PRIMARY KEY, json TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS categories(id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', color TEXT NOT NULL, icon TEXT NOT NULL, sort_order INTEGER NOT NULL DEFAULT 99, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS assets(id TEXT PRIMARY KEY, title TEXT NOT NULL, category_id TEXT, kind TEXT NOT NULL, language TEXT NOT NULL, content TEXT NOT NULL DEFAULT '', revision INTEGER NOT NULL DEFAULT 1, is_favorite INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, last_opened_at TEXT);
+CREATE TABLE IF NOT EXISTS asset_files(id TEXT PRIMARY KEY, asset_id TEXT NOT NULL, name TEXT NOT NULL, ext TEXT NOT NULL DEFAULT '', category TEXT NOT NULL DEFAULT '', alias_key TEXT, path TEXT NOT NULL, is_directory INTEGER NOT NULL DEFAULT 0, size INTEGER, checksum TEXT, checksum_algo TEXT, published_at TEXT, note TEXT NOT NULL DEFAULT '', FOREIGN KEY(asset_id) REFERENCES assets(id) ON DELETE CASCADE);
+CREATE TABLE IF NOT EXISTS asset_links(id INTEGER PRIMARY KEY AUTOINCREMENT, asset_id TEXT NOT NULL, label TEXT NOT NULL, url TEXT NOT NULL, FOREIGN KEY(asset_id) REFERENCES assets(id) ON DELETE CASCADE);
+CREATE TABLE IF NOT EXISTS asset_revisions(id TEXT PRIMARY KEY, asset_id TEXT NOT NULL, revision INTEGER NOT NULL, content TEXT NOT NULL, files_json TEXT, deploy_json TEXT, saved_at TEXT NOT NULL, change_note TEXT NOT NULL DEFAULT '', FOREIGN KEY(asset_id) REFERENCES assets(id) ON DELETE CASCADE);
+CREATE TABLE IF NOT EXISTS path_aliases(id TEXT PRIMARY KEY, key TEXT NOT NULL UNIQUE, label TEXT NOT NULL, root TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', enabled INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS trash_assets(asset_id TEXT PRIMARY KEY, snapshot_json TEXT NOT NULL, deleted_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_assets_category ON assets(category_id);
+CREATE INDEX IF NOT EXISTS idx_assets_kind ON assets(kind);
+CREATE INDEX IF NOT EXISTS idx_asset_files_asset ON asset_files(asset_id);
+CREATE INDEX IF NOT EXISTS idx_revisions_asset ON asset_revisions(asset_id, revision);`);
+db.close();
+console.log(`SQLite schema ready: ${file}`);

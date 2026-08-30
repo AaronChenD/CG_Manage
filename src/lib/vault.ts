@@ -1,10 +1,11 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream, existsSync } from "node:fs";
-import { mkdir, open, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { copyFile, mkdir, open, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, resolve as resolvePathname, sep } from "node:path";
 import { extOf, extInfo, joinNative, parsePathTemplate, type PathAliasDTO } from "@/lib/asset-catalog";
 import type { DeployPlanDTO } from "@/lib/script-package";
+import { listTrash, moveToTrash, readDocument, removeFromTrash, writeDocument } from "@/lib/sqlite-store";
 
 export type VaultLink = { label: string; url: string };
 
@@ -139,6 +140,18 @@ const storedTextsPath = join(process.cwd(), "stored_texts");
 const assetLibraryPath = join(process.cwd(), "asset_library");
 const maxHistory = 20;
 const hashLimitBytes = 64 * 1024 * 1024;
+const maxHashConcurrency = 2;
+let activeHashes = 0;
+const hashWaiters: (() => void)[] = [];
+
+async function withHashSlot<T>(operation: () => Promise<T>): Promise<T> {
+  if (activeHashes >= maxHashConcurrency) await new Promise<void>((resolve) => hashWaiters.push(resolve));
+  activeHashes += 1;
+  try { return await operation(); } finally {
+    activeHashes -= 1;
+    hashWaiters.shift()?.();
+  }
+}
 
 const categorySeeds = [
   { name: "全局通用", description: "跨软件的管线工具与规范", color: "#94a3b8", icon: "globe", sortOrder: 0 },
@@ -177,6 +190,9 @@ async function withWriteLock<T>(operation: () => Promise<T>) {
 }
 
 async function writeJsonAtomic(filePath: string, value: unknown) {
+  writeDocument(filePath, value);
+  return;
+  /* Legacy JSON writer retained below for manual recovery exports.
   await mkdir(dirname(filePath), { recursive: true });
   const temporaryPath = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
   const handle = await open(temporaryPath, "w");
@@ -186,16 +202,28 @@ async function writeJsonAtomic(filePath: string, value: unknown) {
   } finally {
     await handle.close();
   }
+  // 保留上一份可恢复副本；复制失败不阻塞正常首次创建。
+  try {
+    if (existsSync(filePath)) await copyFile(filePath, `${filePath}.bak`);
+  } catch (error) {
+    console.warn(`Unable to create backup for ${filePath}`, error);
+  }
   await rename(temporaryPath, filePath);
+  */
 }
 
 async function readJson<T>(filePath: string, fallback: T): Promise<T> {
   try {
-    return JSON.parse(await readFile(filePath, "utf8")) as T;
+    const stored = readDocument<T | undefined>(filePath, undefined);
+    if (stored !== undefined) return stored;
+    const legacy = JSON.parse(await readFile(filePath, "utf8")) as T;
+    writeDocument(filePath, legacy);
+    return legacy;
   } catch (error) {
     const code = (error as { code?: string }).code;
-    if (code !== "ENOENT") console.error(`Unable to read JSON file ${filePath}`, error);
-    return fallback;
+    if (code === "ENOENT") return fallback;
+    console.error(`Unable to read data file ${filePath}`, error);
+    throw new VaultError(500, `数据文件无法读取或 JSON 已损坏：${filePath}`);
   }
 }
 
@@ -503,6 +531,17 @@ async function saveConfig(config: VaultConfig) {
 }
 
 /** 路径解析：别名 + 相对路径 → 服务器可访问的真实路径。 */
+function resolveAliasPath(alias: PathAliasDTO, relativePath: string) {
+  const root = resolvePathname(alias.root);
+  const candidate = resolvePathname(root, relativePath);
+  const escaped = relative(root, candidate);
+  // 别名根是安全边界：禁止 ../ 穿越，避免浏览/校验接口访问任意本机路径。
+  if (escaped === ".." || escaped.startsWith(`..${sep}`) || isAbsolute(escaped)) {
+    return null;
+  }
+  return candidate;
+}
+
 function resolvePath(file: ManagedFile, aliases: PathAliasDTO[]): FileStatus {
   const template = file.aliasKey ? `$${file.aliasKey}/${file.path}` : file.path;
   const alias = file.aliasKey ? aliases.find((item) => item.key.toUpperCase() === file.aliasKey?.toUpperCase()) : undefined;
@@ -512,7 +551,8 @@ function resolvePath(file: ManagedFile, aliases: PathAliasDTO[]): FileStatus {
   if (file.aliasKey && alias && !alias.enabled) {
     return { resolvedPath: template, exists: null, isDirectory: false, size: null, modifiedAt: null, error: `路径别名 $${file.aliasKey} 已停用` };
   }
-  const resolved = alias ? joinNative(alias.root, file.path) : file.path;
+  const resolved = alias ? resolveAliasPath(alias, file.path) : file.path;
+  if (!resolved) return { resolvedPath: template, exists: null, isDirectory: false, size: null, modifiedAt: null, error: "路径不能越过别名根目录" };
   return { resolvedPath: resolved, exists: null, isDirectory: false, size: null, modifiedAt: null, error: null };
 }
 
@@ -535,17 +575,20 @@ async function statTarget(status: FileStatus): Promise<FileStatus> {
 }
 
 async function hashFile(resolvedPath: string) {
+  return withHashSlot(async () => {
   const info = await stat(resolvedPath);
   if (info.isDirectory()) throw new VaultError(400, "该路径是目录，无法计算校验和。");
   if (info.size > hashLimitBytes) throw new VaultError(400, `文件超过 ${Math.round(hashLimitBytes / 1024 / 1024)} MB，已跳过校验和计算。`);
-  const hash = createHash("md5");
+  // SHA-256 用于交付一致性校验；保留字段名 checksum 以兼容已有 JSON 数据。
+  const hash = createHash("sha256");
   await new Promise<void>((resolve, reject) => {
     const stream = createReadStream(resolvedPath);
     stream.on("data", (chunk) => hash.update(chunk));
     stream.on("end", resolve);
     stream.on("error", reject);
   });
-  return { digest: hash.digest("hex"), size: info.size, algorithm: "md5" };
+  return { digest: hash.digest("hex"), size: info.size, algorithm: "sha256" };
+  });
 }
 
 function summaryOf(files: ManagedFileDTO[]): FileSummary {
@@ -884,7 +927,7 @@ for image in bpy.data.images:
   });
 }
 
-export async function getVaultSnapshot() {
+export async function getVaultSnapshot(options: { query?: string; page?: number; pageSize?: number } = {}) {
   await ensureVaultSeed();
   const [config, aliases] = await Promise.all([readConfig(), getPathAliases()]);
   const categories = [...config.categories].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, "zh-CN"));
@@ -895,7 +938,12 @@ export async function getVaultSnapshot() {
     if (a.isFavorite !== b.isFavorite) return a.isFavorite ? -1 : 1;
     return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
   });
-  return { categories: categories.map((category) => ({ ...category })), assets, aliases };
+  const query = options.query?.trim().toLowerCase() ?? "";
+  const matched = query ? assets.filter((asset) => [asset.title, asset.content, asset.categoryName, asset.kind, ...asset.tags, ...asset.files.map((file) => `${file.path} ${file.name} ${file.checksum ?? ""}`)].join(" ").toLowerCase().includes(query)) : assets;
+  const pageSize = Math.min(100, Math.max(1, (options.pageSize ?? matched.length) || 1));
+  const page = Math.max(1, options.page ?? 1);
+  const start = (page - 1) * pageSize;
+  return { categories: categories.map((category) => ({ ...category })), assets: matched.slice(start, start + pageSize), aliases, pagination: { page, pageSize, total: matched.length, totalPages: Math.max(1, Math.ceil(matched.length / pageSize)) } };
 }
 
 export async function getAssetById(id: string) {
@@ -1086,12 +1134,57 @@ export async function deleteAsset(id: string) {
     const config = await readConfig();
     const asset = config.assets.find((item) => item.id === id);
     if (!asset) throw new VaultError(404, "该资产不存在或已被删除。");
+    const stored = await readStoredText(asset.contentFile);
+    moveToTrash(id, { asset, stored });
     await saveConfig({ version: config.version, seeded: config.seeded, categories: config.categories, assets: config.assets.filter((item) => item.id !== id) });
-    try {
-      await unlink(join(storedTextsPath, asset.contentFile));
-    } catch (error) {
-      if ((error as { code?: string }).code !== "ENOENT") throw error;
+  });
+}
+
+export async function getTrash() {
+  return listTrash().map((row) => ({ assetId: row.assetId, deletedAt: row.deletedAt, snapshot: JSON.parse(String(row.snapshot)) }));
+}
+
+export async function findDuplicates() {
+  const config = await readConfig();
+  const paths = new Map<string, { assetId: string; assetTitle: string }[]>();
+  const checksums = new Map<string, { assetId: string; assetTitle: string; path: string }[]>();
+  for (const asset of config.assets) {
+    for (const file of asset.files) {
+      const pathKey = `${file.aliasKey ?? ""}:${file.path}`.toLowerCase();
+      const pathItems = paths.get(pathKey) ?? [];
+      pathItems.push({ assetId: asset.id, assetTitle: asset.title });
+      paths.set(pathKey, pathItems);
+      if (file.checksum) {
+        const checksumItems = checksums.get(file.checksum.toLowerCase()) ?? [];
+        checksumItems.push({ assetId: asset.id, assetTitle: asset.title, path: file.path });
+        checksums.set(file.checksum.toLowerCase(), checksumItems);
+      }
     }
+  }
+  return {
+    paths: [...paths.entries()].filter(([, items]) => items.length > 1).map(([path, items]) => ({ path, items })),
+    checksums: [...checksums.entries()].filter(([, items]) => items.length > 1).map(([checksum, items]) => ({ checksum, items })),
+  };
+}
+
+export async function restoreAsset(id: string) {
+  return withWriteLock(async () => {
+    const item = listTrash().map((row) => ({ assetId: row.assetId, deletedAt: row.deletedAt, snapshot: JSON.parse(String(row.snapshot)) })).find((entry) => entry.assetId === id);
+    if (!item) throw new VaultError(404, "回收站中不存在该资产。");
+    const config = await readConfig();
+    if (config.assets.some((asset) => asset.id === id)) throw new VaultError(409, "该资产已经存在。");
+    const snapshot = item.snapshot as { asset: AssetRecord; stored: StoredText };
+    await saveStoredText(snapshot.asset.contentFile, snapshot.stored);
+    await saveConfig({ ...config, assets: [...config.assets, snapshot.asset] });
+    removeFromTrash(id);
+    return getAssetById(id);
+  });
+}
+
+export async function purgeTrash(id: string) {
+  return withWriteLock(async () => {
+    if (!listTrash().some((entry) => entry.assetId === id)) throw new VaultError(404, "回收站中不存在该资产。");
+    removeFromTrash(id);
   });
 }
 
@@ -1239,8 +1332,10 @@ export async function scanDirectory(target: unknown, options: { extensions?: unk
   if (usedKey) {
     const alias = aliases.find((item) => item.key === usedKey);
     if (!alias) throw new VaultError(400, `未定义路径别名 $${usedKey}。`);
+    if (!alias.enabled) throw new VaultError(400, `路径别名 $${usedKey} 已停用。`);
     const relativePath = parsed.aliasKey ? parsed.relative : template.replace(/^[\\/]+/, "");
-    dir = joinNative(alias.root, relativePath);
+    dir = resolveAliasPath(alias, relativePath) ?? "";
+    if (!dir) throw new VaultError(400, "路径不能越过别名根目录。");
   }
   if (!dir) throw new VaultError(400, "请填写要浏览的目录路径。");
   if (!existsSync(dir)) throw new VaultError(404, `目录不存在：${dir}`);
