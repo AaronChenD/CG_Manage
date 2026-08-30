@@ -41,13 +41,10 @@ import {
   Star,
   SunMedium,
   Table2,
-  TerminalSquare,
   TriangleAlert,
   X,
 } from "lucide-react";
 import {
-  FORMAT_GROUPS,
-  MEDIA_KINDS,
   assetTypeLabel,
   formatBytes,
   parsePathTemplate,
@@ -61,14 +58,13 @@ import PathAliasManager from "@/components/path-alias-manager";
 
 type SortMode = "updated" | "name" | "size" | "format";
 type ViewMode = "grid" | "table";
-type KindFilter = "All" | "Snippet" | "Executable" | "Reference" | "File";
+type KindFilter = "All" | "Script" | "Reference" | "File";
 type StatusFilter = "all" | "present" | "missing" | "unchecked";
 type Toast = { message: string; tone: "success" | "error" } | null;
 
 const KIND_FILTERS: { value: KindFilter; label: string }[] = [
   { value: "All", label: "全部类型" },
-  { value: "Snippet", label: "代码片段" },
-  { value: "Executable", label: "可执行脚本" },
+  { value: "Script", label: "代码/脚本" },
   { value: "Reference", label: "参考链接" },
   { value: "File", label: "文件资产" },
 ];
@@ -112,7 +108,7 @@ function StatusPill({ tone, label }: { tone: string; label: string }) {
 }
 
 function assetStatus(asset: AssetDTO): StatusFilter {
-  if (asset.kind !== "File" || !asset.files.length) return "all";
+  if (!asset.files.length) return "all";
   if (asset.files.some((file) => file.status.error)) return "missing";
   if (asset.files.every((file) => file.status.exists === true)) return "present";
   if (asset.files.some((file) => file.status.exists === false)) return "missing";
@@ -125,10 +121,11 @@ export default function VaultDashboard({ initialAssets, initialCategories, initi
   const [aliases, setAliases] = useState(initialAliases);
   const [activeCategory, setActiveCategory] = useState("all");
   const [kindFilter, setKindFilter] = useState<KindFilter>("All");
-  const [formatFilter, setFormatFilter] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [search, setSearch] = useState("");
   const [sortMode, setSortMode] = useState<SortMode>("updated");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(24);
   const [view, setView] = useState<ViewMode>("grid");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
@@ -140,6 +137,10 @@ export default function VaultDashboard({ initialAssets, initialCategories, initi
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [toast, setToast] = useState<Toast>(null);
+  const [trashOpen, setTrashOpen] = useState(false);
+  const [duplicateOpen, setDuplicateOpen] = useState(false);
+  const [duplicateGroups, setDuplicateGroups] = useState<{ paths: { path: string; items: { assetTitle: string }[] }[]; checksums: { checksum: string; items: { assetTitle: string; path: string }[] }[] }>({ paths: [], checksums: [] });
+  const [trashItems, setTrashItems] = useState<{ assetId: string; deletedAt: string; snapshot: { asset?: { title?: string } } }[]>([]);
   const [clientNow, setClientNow] = useState(0);
   const searchInput = useRef<HTMLInputElement>(null);
 
@@ -147,7 +148,8 @@ export default function VaultDashboard({ initialAssets, initialCategories, initi
 
   const activeCategoryInfo = categories.find((category) => category.id === activeCategory);
   const fileAssets = useMemo(() => assets.filter((asset) => asset.kind === "File"), [assets]);
-  const trackedFiles = useMemo(() => fileAssets.flatMap((asset) => asset.files.map((file) => ({ ...file, assetId: asset.id, assetTitle: asset.title }))), [fileAssets]);
+  // 代码/脚本现在也可以登记路径，因此可达性统计覆盖所有带路径的资产。
+  const trackedFiles = useMemo(() => assets.filter((asset) => asset.files.length > 0).flatMap((asset) => asset.files.map((file) => ({ ...file, assetId: asset.id, assetTitle: asset.title }))), [assets]);
   const presentFiles = trackedFiles.filter((file) => file.status.exists === true).length;
   const missingFiles = trackedFiles.filter((file) => file.status.exists === false || file.status.error).length;
   const totalBytes = trackedFiles.reduce((sum, file) => sum + (file.status.size ?? file.size ?? 0), 0);
@@ -166,7 +168,6 @@ export default function VaultDashboard({ initialAssets, initialCategories, initi
       .filter((asset) => {
         if (activeCategory !== "all" && asset.categoryId !== activeCategory) return false;
         if (kindFilter !== "All" && asset.kind !== kindFilter) return false;
-        if (formatFilter && !asset.fileSummary.formats.some((ext) => (FORMAT_GROUPS.find((group) => group.key === formatFilter)?.exts ?? []).includes(ext))) return false;
         if (statusFilter !== "all" && (asset.kind !== "File" || assetStatus(asset) !== statusFilter)) return false;
         if (!query) return true;
         const haystack = [
@@ -183,7 +184,19 @@ export default function VaultDashboard({ initialAssets, initialCategories, initi
         if (a.isFavorite !== b.isFavorite) return a.isFavorite ? -1 : 1;
         return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
       });
-  }, [activeCategory, assets, formatFilter, kindFilter, search, sortMode, statusFilter]);
+  }, [activeCategory, assets, kindFilter, search, sortMode, statusFilter]);
+
+  // 筛选 / 排序 / 搜索变化时回到第一页（在渲染期调整状态的官方模式，避免 effect 内 setState）。
+  const filterKey = `${activeCategory}|${kindFilter}|${statusFilter}|${search}|${sortMode}`;
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
+  if (prevFilterKey !== filterKey) {
+    setPrevFilterKey(filterKey);
+    setPage(1);
+  }
+
+  const totalPages = Math.max(1, Math.ceil(filteredAssets.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageItems = filteredAssets.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const refresh = useCallback(async () => {
     setIsRefreshing(true);
@@ -220,6 +233,30 @@ export default function VaultDashboard({ initialAssets, initialCategories, initi
   }, []);
 
   const openCreate = useCallback(() => setEditor({ open: true, asset: null }), []);
+
+  const inspectDuplicates = useCallback(async () => {
+    try {
+      const response = await fetch("/api/vault/duplicates", { cache: "no-store" });
+      if (!response.ok) throw new Error("重复检查失败。");
+      const result = await response.json() as { paths?: { path: string; items: { assetTitle: string }[] }[]; checksums?: { checksum: string; items: { assetTitle: string; path: string }[] }[] };
+      setDuplicateGroups({ paths: result.paths ?? [], checksums: result.checksums ?? [] });
+      setDuplicateOpen(true);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "重复检查失败。", "error");
+    }
+  }, [notify]);
+
+  const inspectTrash = useCallback(async () => {
+    try {
+      const response = await fetch("/api/vault/trash", { cache: "no-store" });
+      if (!response.ok) throw new Error("回收站读取失败。");
+      const result = await response.json() as { items?: { assetId: string; deletedAt: string; snapshot: { asset?: { title?: string } } }[] };
+      setTrashItems(result.items ?? []);
+      setTrashOpen(true);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "回收站读取失败。", "error");
+    }
+  }, [notify]);
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
@@ -296,12 +333,16 @@ export default function VaultDashboard({ initialAssets, initialCategories, initi
     }
   };
 
-  const title = activeCategoryInfo ? activeCategoryInfo.name : kindFilter === "File" ? "文件资产" : "全部资产";
+  const title = activeCategoryInfo ? activeCategoryInfo.name : kindFilter === "File" ? "文件资产" : kindFilter === "Script" ? "代码/脚本" : kindFilter === "Reference" ? "参考链接" : "全部资产";
   const description = activeCategoryInfo
     ? activeCategoryInfo.description
     : kindFilter === "File"
-      ? "模型、动画、缓存与 USD 装配的路径登记、格式细分与可达性校验。"
-      : "集中管理脚本、工具配置与技术资料。";
+      ? "模型、动画、缓存与 USD 装配等文件的路径登记与可达性校验。"
+      : kindFilter === "Script"
+        ? "脚本与代码片段：可直接粘贴保存，也可登记单文件或整个文件夹路径。"
+        : kindFilter === "Reference"
+          ? "文档、检查表与外部资料的说明与链接。"
+          : "集中管理脚本、文件路径与技术资料。";
 
   return (
     <div className={`vault-app ${sidebarOpen ? "" : "is-sidebar-collapsed"}`} data-theme={theme}>
@@ -317,52 +358,57 @@ export default function VaultDashboard({ initialAssets, initialCategories, initi
 
         <button className="new-asset-button" onClick={openCreate}><Plus size={17} strokeWidth={2.5} /> {sidebarOpen && <span>新建资产</span>}<kbd>N</kbd></button>
 
-        <nav className="side-nav" aria-label="代码库导航">
-          <p className="side-heading">资源库</p>
-          <button className={`side-nav-row ${activeCategory === "all" && kindFilter === "All" ? "active" : ""}`} onClick={() => { setActiveCategory("all"); setKindFilter("All"); setFormatFilter(null); setStatusFilter("all"); setView("grid"); }}>
-            <Grid2X2 size={17} /><span>全部资产</span><b>{assets.length}</b>
-          </button>
-          <button className={`side-nav-row ${kindFilter === "Snippet" ? "active" : ""}`} onClick={() => { setActiveCategory("all"); setKindFilter("Snippet"); setFormatFilter(null); setStatusFilter("all"); setView("grid"); }}>
-            <Code2 size={17} /><span>代码片段</span><b>{assets.filter((asset) => asset.kind === "Snippet").length}</b>
-          </button>
-          <button className={`side-nav-row ${kindFilter === "Executable" ? "active" : ""}`} onClick={() => { setActiveCategory("all"); setKindFilter("Executable"); setFormatFilter(null); setStatusFilter("all"); setView("grid"); }}>
-            <TerminalSquare size={17} /><span>可执行脚本</span><b>{assets.filter((asset) => asset.kind === "Executable").length}</b>
-          </button>
-          <button className={`side-nav-row ${kindFilter === "Reference" ? "active" : ""}`} onClick={() => { setActiveCategory("all"); setKindFilter("Reference"); setFormatFilter(null); setStatusFilter("all"); setView("grid"); }}>
-            <Link2 size={17} /><span>参考链接</span><b>{assets.filter((asset) => asset.kind === "Reference").length}</b>
-          </button>
-          <button className={`side-nav-row ${kindFilter === "File" ? "active" : ""}`} onClick={() => { setActiveCategory("all"); setKindFilter("File"); setView("table"); }}>
-            <FileArchive size={17} /><span>文件资产</span><b>{fileAssets.length}</b>
-          </button>
-        </nav>
+        <div className="sidebar-scroll">
+          <nav className="side-nav" aria-label="代码库导航">
+            <p className="side-heading">资源库</p>
+            <button className={`side-nav-row ${activeCategory === "all" && kindFilter === "All" ? "active" : ""}`} onClick={() => { setActiveCategory("all"); setKindFilter("All"); setStatusFilter("all"); setView("grid"); }}>
+              <Grid2X2 size={17} /><span>全部资产</span><b>{assets.length}</b>
+            </button>
+            <button className={`side-nav-row ${kindFilter === "Script" ? "active" : ""}`} onClick={() => { setActiveCategory("all"); setKindFilter("Script"); setStatusFilter("all"); setView("grid"); }}>
+              <Code2 size={17} /><span>代码/脚本</span><b>{assets.filter((asset) => asset.kind === "Script").length}</b>
+            </button>
+            <button className={`side-nav-row ${kindFilter === "Reference" ? "active" : ""}`} onClick={() => { setActiveCategory("all"); setKindFilter("Reference"); setStatusFilter("all"); setView("grid"); }}>
+              <Link2 size={17} /><span>参考链接</span><b>{assets.filter((asset) => asset.kind === "Reference").length}</b>
+            </button>
+            <button className={`side-nav-row ${kindFilter === "File" ? "active" : ""}`} onClick={() => { setActiveCategory("all"); setKindFilter("File"); setView("table"); }}>
+              <FileArchive size={17} /><span>文件资产</span><b>{fileAssets.length}</b>
+            </button>
+          </nav>
 
-        <div className="spaces-section">
-          <div className="spaces-heading"><p className="side-heading">软件空间</p><button className="tiny-icon" onClick={() => setCategoryDialog(true)} aria-label="新建软件空间"><Plus size={15} /></button></div>
-          <div className="space-list">
-            {categories.map((category) => (
-              <button key={category.id} className={`space-row ${activeCategory === category.id ? "active" : ""}`} onClick={() => setActiveCategory(category.id)}>
-                <span className="category-dot" style={{ backgroundColor: category.color }}><AssetIcon category={category.name} /></span>
-                <span>{category.name}</span><b>{categoryCounts[category.id] ?? 0}</b>
-              </button>
-            ))}
+          <div className="spaces-section">
+            <div className="spaces-heading"><p className="side-heading">软件空间</p><button className="tiny-icon" onClick={() => setCategoryDialog(true)} aria-label="新建软件空间"><Plus size={15} /></button></div>
+            <div className="space-list">
+              {categories.map((category) => (
+                <button key={category.id} className={`space-row ${activeCategory === category.id ? "active" : ""}`} onClick={() => setActiveCategory(category.id)}>
+                  <span className="category-dot" style={{ backgroundColor: category.color }}><AssetIcon category={category.name} /></span>
+                  <span>{category.name}</span><b>{categoryCounts[category.id] ?? 0}</b>
+                </button>
+              ))}
+            </div>
+            <button className="add-space-link" onClick={() => setCategoryDialog(true)}><FolderPlus size={15} /> 新建软件空间</button>
           </div>
-          <button className="add-space-link" onClick={() => setCategoryDialog(true)}><FolderPlus size={15} /> 新建软件空间</button>
-        </div>
 
-        <div className="path-section">
-          <p className="side-heading">路径与存储</p>
-          <button className="side-nav-row" onClick={() => setAliasOpen(true)}>
-            <FolderTree size={17} /><span>路径别名</span><b>{aliases.length}</b>
-          </button>
-          <div className="alias-mini-list">
-            {aliases.slice(0, 3).map((alias) => <span key={alias.id} className={`alias-mini ${alias.enabled ? "" : "off"}`} title={alias.root}><i>${alias.key}</i>{parsePathTemplate(`$${alias.key}`).aliasKey}{aliasUsage[alias.key] ? ` · ${aliasUsage[alias.key]}` : ""}</span>)}
-            {aliases.length > 3 && <button onClick={() => setAliasOpen(true)}>+{aliases.length - 3} 个别名</button>}
+          <div className="path-section">
+            <p className="side-heading">路径与存储</p>
+            <button className="side-nav-row" onClick={() => setAliasOpen(true)}>
+              <FolderTree size={17} /><span>路径别名</span><b>{aliases.length}</b>
+            </button>
+            <button className="side-nav-row" onClick={() => void inspectDuplicates()}>
+              <ScanLine size={17} /><span>重复检测</span><b>检查</b>
+            </button>
+            <button className="side-nav-row" onClick={() => void inspectTrash()}>
+              <Inbox size={17} /><span>回收站</span><b>查看</b>
+            </button>
+            <div className="alias-mini-list">
+              {aliases.slice(0, 3).map((alias) => <span key={alias.id} className={`alias-mini ${alias.enabled ? "" : "off"}`} title={alias.root}><i>${alias.key}</i>{parsePathTemplate(`$${alias.key}`).aliasKey}{aliasUsage[alias.key] ? ` · ${aliasUsage[alias.key]}` : ""}</span>)}
+              {aliases.length > 3 && <button onClick={() => setAliasOpen(true)}>+{aliases.length - 3} 个别名</button>}
+            </div>
+            {missingFiles > 0 && <button className="alert-row" onClick={() => void checkAllMissing()}><TriangleAlert size={15} /><span>{missingFiles} 个路径无法访问</span><RefreshCw size={14} className={isRefreshing ? "spin" : ""} /></button>}
           </div>
-          {missingFiles > 0 && <button className="alert-row" onClick={() => void checkAllMissing()}><TriangleAlert size={15} /><span>{missingFiles} 个路径无法访问</span><RefreshCw size={14} className={isRefreshing ? "spin" : ""} /></button>}
         </div>
 
         <div className="sidebar-bottom">
-          <div className="sync-status"><span className="online-pulse" /><span>本地 JSON 已同步</span><small>config/</small></div>
+          <div className="sync-status"><span className="online-pulse" /><span>本地 SQLite 已同步</span><small>data/cg-vault.sqlite</small></div>
           <button className="profile-row"><span className="profile-avatar">TA</span>{sidebarOpen && <span><b>陈技术</b><small>技术美术 · 管线组</small></span>}<FolderCheck size={16} /></button>
         </div>
       </aside>
@@ -398,8 +444,8 @@ export default function VaultDashboard({ initialAssets, initialCategories, initi
           </section>
 
           <section className="metric-grid" aria-label="代码库概览">
-            <article className="metric-card primary-metric"><div><span className="metric-label">资产总数</span><strong>{assets.length.toString().padStart(2, "0")}</strong><small><ArrowUpRight size={14} /> 文本 {assets.length - fileAssets.length} · 文件 {fileAssets.length}</small></div><div className="metric-orbit"><Layers3 size={25} /></div></article>
-            <article className="metric-card"><div><span className="metric-label">登记文件</span><strong>{trackedFiles.length.toString().padStart(2, "0")}</strong><small><HardDrive size={12} /> {formatBytes(totalBytes)} · {formatBytes(totalBytes / Math.max(1, trackedFiles.length))}/均值</small></div><div className="metric-visual dots-visual">{MEDIA_KINDS.slice(0, 5).map((kind, index) => <i key={kind} className={index === 3 ? "hot" : ""} title={kind} />)}</div></article>
+            <article className="metric-card primary-metric"><div><span className="metric-label">资产总数</span><strong>{assets.length.toString().padStart(2, "0")}</strong><small><ArrowUpRight size={14} /> 脚本 {assets.filter((asset) => asset.kind === "Script").length} · 文件 {fileAssets.length}</small></div><div className="metric-orbit"><Layers3 size={25} /></div></article>
+            <article className="metric-card"><div><span className="metric-label">登记路径</span><strong>{trackedFiles.length.toString().padStart(2, "0")}</strong><small><HardDrive size={12} /> {formatBytes(totalBytes)} · {formatBytes(totalBytes / Math.max(1, trackedFiles.length))}/均值</small></div><div className="metric-visual dots-visual">{["fbx", "abc", "usd", "png", "exr"].map((ext, index) => <i key={ext} className={index === 3 ? "hot" : ""} title={`.${ext}`} />)}</div></article>
             <article className={`metric-card ${missingFiles ? "warn-metric" : ""}`}><div><span className="metric-label">路径可达性</span><strong>{presentFiles}<small>/{trackedFiles.length}</small></strong><small>{missingFiles ? <><AlertTriangle size={12} /> {missingFiles} 个缺失或不可访问</> : <><FolderCheck size={12} /> 全部路径可访问</>}</small></div><div className="metric-visual revision-visual">{missingFiles ? <AlertTriangle size={28} /> : <FolderCheck size={28} />}</div></article>
             <article className="activity-card"><div className="activity-top"><span className="metric-label">近 7 天保存</span><span className="activity-note">含路径变更</span></div><div className="activity-bars">{[32, 45, 22, 68, 47, 83, 59].map((height, index) => <i key={index} style={{ height: `${height}%` }} className={index === 5 ? "current" : ""} />)}</div><div className="activity-days"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div></article>
           </section>
@@ -422,79 +468,68 @@ export default function VaultDashboard({ initialAssets, initialCategories, initi
               <div className="filter-label"><Filter size={15} /> 筛选</div>
               {KIND_FILTERS.map((filter) => <button key={filter.value} className={`filter-chip ${kindFilter === filter.value ? "active" : ""}`} onClick={() => {
                 setKindFilter(filter.value);
-                // 切到代码类资产时清掉文件专属筛选，防止隐藏条件继续生效导致“查不到东西”。
-                if (filter.value !== "All" && filter.value !== "File") {
-                  setFormatFilter(null);
-                  setStatusFilter("all");
-                }
+                // 切到代码/脚本或链接时清掉文件专属筛选，防止隐藏条件继续生效导致“查不到东西”。
+                if (filter.value !== "All" && filter.value !== "File") setStatusFilter("all");
               }}>{filter.label}</button>)}
-              {(search || activeCategory !== "all" || kindFilter !== "All" || formatFilter || statusFilter !== "all") && <button className="clear-filter" onClick={() => { setSearch(""); setActiveCategory("all"); setKindFilter("All"); setFormatFilter(null); setStatusFilter("all"); }}>清除筛选 <X size={13} /></button>}
+              {(search || activeCategory !== "all" || kindFilter !== "All" || statusFilter !== "all") && <button className="clear-filter" onClick={() => { setSearch(""); setActiveCategory("all"); setKindFilter("All"); setStatusFilter("all"); }}>清除筛选 <X size={13} /></button>}
             </div>
 
-            {/* 格式与可达性只对文件资产有意义，代码/脚本/链接下不展示，避免出现必然为空的筛选结果。 */}
+            {/* 可达性只对文件资产有意义，代码/脚本/链接下不展示，避免出现必然为空的筛选结果。 */}
             {(kindFilter === "All" || kindFilter === "File") && <div className="filter-row secondary-filters">
-              <div className="filter-label"><FileArchive size={15} /> 格式细分</div>
-              {FORMAT_GROUPS.map((group) => <button key={group.key} className={`filter-chip tiny ${formatFilter === group.key ? "active" : ""}`} onClick={() => {
-                const next = formatFilter === group.key ? null : group.key;
-                setFormatFilter(next);
-                // 选中某个格式组时自动切到文件资产视图，避免在代码类筛选下“必然为空”。
-                if (next) setKindFilter("File");
-              }} title={group.exts.map((ext) => `.${ext}`).join(" ")}>{group.label}</button>)}
-              <span className="filter-divider" />
               <div className="filter-label"><ScanLine size={15} /> 路径状态</div>
               {(["all", "present", "missing", "unchecked"] as StatusFilter[]).map((status) => <button key={status} className={`filter-chip tiny ${statusFilter === status ? "active" : ""}`} onClick={() => { setStatusFilter(status); if (status !== "all") setKindFilter("File"); }}>{status === "all" ? "全部" : status === "present" ? "可访问" : status === "missing" ? "缺失" : "未校验"}</button>)}
             </div>}
 
             {!filteredAssets.length ? <div className="empty-state"><div><Inbox size={28} /></div><h3>没有找到资产</h3><p>换个关键词，或为当前空间新建第一条资产。</p><button className="small-primary" onClick={openCreate}><Plus size={15} /> 新建资产</button></div>
               : view === "grid" ? <div className="asset-grid">
-              {filteredAssets.map((asset) => {
+              {pageItems.map((asset) => {
                 const status = assetStatus(asset);
                 const isFile = asset.kind === "File";
                 return <article className={`asset-card ${isFile ? "is-file" : ""}`} key={asset.id} onClick={() => setEditor({ open: true, asset })}>
                   <div className="asset-card-top">
-                    <div className="asset-type"><LanguageMark asset={asset} /><span>{assetTypeLabel(asset.kind)}</span>{isFile && <em className="media-tag">{asset.mediaKind}</em>}{!isFile && asset.packageInfo.dcc && <em className="media-tag pkg">{asset.packageInfo.dcc}</em>}{!isFile && asset.deploy?.installTarget && <em className="media-tag dep">已配部署</em>}</div>
+                    <div className="asset-type"><LanguageMark asset={asset} /><span>{assetTypeLabel(asset.kind)}</span>{isFile && asset.mediaKind !== "其他" && <em className="media-tag">{asset.mediaKind}</em>}{!isFile && asset.kind === "Script" && asset.language !== "文本" && <em className="media-tag">{asset.language}</em>}</div>
                     <div className="card-tools">
-                      {isFile && <button className="icon-tiny" title="复制第一条文件的别名路径" onClick={(event) => { event.stopPropagation(); const first = asset.files[0]; void copy(`tpl-${asset.id}`, first ? templateForDisplay(first.aliasKey, first.path) : ""); }}><Copy size={14} /></button>}
+                      {asset.files.length > 0 && <button className="icon-tiny" title="复制第一条路径的别名写法" onClick={(event) => { event.stopPropagation(); const first = asset.files[0]; void copy(`tpl-${asset.id}`, first ? templateForDisplay(first.aliasKey, first.path) : ""); }}><Copy size={14} /></button>}
                       <button className={`star-button ${asset.isFavorite ? "is-starred" : ""}`} aria-label="收藏资产"><Star size={17} fill={asset.isFavorite ? "currentColor" : "none"} /></button>
                     </div>
                   </div>
                   <h3>{asset.title}</h3>
-                  {isFile ? <div className="file-preview">
-                    {asset.files.length === 0 && <span className="file-more">尚未登记文件，点「管理路径」添加 <code>$别名/相对路径</code>。</span>}
+                  {asset.files.length > 0 ? <div className="file-preview">
                     {asset.files.slice(0, 3).map((file) => {
                       const tone = statusTone(file.status.exists, file.status.error);
+                      const isDir = file.status.exists ? file.status.isDirectory : file.isDirectory;
                       return <div className="file-preview-row" key={file.id}>
-                        <i className="ext-badge">{file.ext}</i>
+                        <i className="ext-badge">{isDir ? "DIR" : file.ext || "···"}</i>
                         <code title={file.status.resolvedPath}>{templateForDisplay(file.aliasKey, file.path)}</code>
-                        <span className={`status-pill ${tone}`}><i />{tone === "present" ? formatBytes(file.status.size) : tone === "missing" ? "缺失" : "未校验"}</span>
+                        <span className={`status-pill ${tone}`}><i />{tone === "present" ? (isDir ? "目录" : formatBytes(file.status.size)) : tone === "missing" ? "缺失" : "未校验"}</span>
                       </div>;
                     })}
-                    {asset.files.length > 3 && <span className="file-more">另有 {asset.files.length - 3} 个文件</span>}
-                  </div> : <pre>{asset.content || "暂无内容。"}</pre>}
+                    {asset.files.length > 3 && <span className="file-more">另有 {asset.files.length - 3} 条路径</span>}
+                  </div> : isFile ? <div className="file-preview"><span className="file-more">尚未登记路径，点「管理路径」添加 <code>$别名/相对路径</code>。</span></div> : <pre>{asset.content || "暂无内容。"}</pre>}
                   <div className="asset-tags">{asset.tags.slice(0, 3).map((tag) => <span key={tag}>#{tag}</span>)}{asset.tags.length > 3 && <span>+{asset.tags.length - 3}</span>}</div>
                   <div className="asset-card-bottom">
                     <span className="asset-space"><i style={{ backgroundColor: asset.categoryColor }} /><span>{asset.categoryName}</span></span>
                     <span className="asset-revision"><History size={14} /> v{asset.revision}</span>
-                    {isFile && <span className={`asset-files-count ${status}`}>{asset.fileSummary.present}/{asset.fileSummary.total} 可访问</span>}
+                    {asset.files.length > 0 && <span className={`asset-files-count ${status}`}>{asset.fileSummary.present}/{asset.fileSummary.total} 可访问</span>}
                     <button className="copy-button" onClick={(event) => { event.stopPropagation(); if (isFile) setEditor({ open: true, asset }); else void copy(`code-${asset.id}`, asset.content, "代码已复制到剪贴板。"); }}>{isFile ? <FolderOpen size={14} /> : copiedKey === `code-${asset.id}` ? <Check size={14} /> : <Copy size={14} />}{isFile ? "管理路径" : copiedKey === `code-${asset.id}` ? "已复制" : "复制"}</button>
                   </div>
                 </article>;
               })}
             </div> : <div className="table-wrap">
               <table className="asset-table">
-                <thead><tr><th className="col-asset">资产 / 文件</th><th className="col-kind">细分</th><th className="col-fmt">格式</th><th className="col-size">大小</th><th className="col-path">路径（别名 / 相对）</th><th className="col-status">状态</th><th className="col-ver">版本</th><th className="col-act">操作</th></tr></thead>
+                <thead><tr><th className="col-asset">资产 / 文件</th><th className="col-kind">语言 / 类别</th><th className="col-fmt">格式</th><th className="col-size">大小</th><th className="col-path">路径（别名 / 相对）</th><th className="col-status">状态</th><th className="col-ver">版本</th><th className="col-act">操作</th></tr></thead>
                 <tbody>
-                  {filteredAssets.map((asset) => {
+                  {pageItems.map((asset) => {
                     const isFile = asset.kind === "File";
                     const open = Boolean(expanded[asset.id]);
                     const primary = asset.files[0];
                     return <Fragment key={asset.id}>
-                      <tr className={open ? "is-open" : ""} onClick={() => (isFile ? setExpanded((current) => ({ ...current, [asset.id]: !current[asset.id] })) : setEditor({ open: true, asset }))}>
-                        <td className="col-asset"><div className="table-asset"><span className="table-mark">{isFile ? <FileArchive size={14} /> : asset.kind === "Executable" ? <TerminalSquare size={14} /> : asset.kind === "Reference" ? <Link2 size={14} /> : <FileCode2 size={14} />}</span><div><b>{asset.title}</b><small>{isFile ? `${asset.fileSummary.total} 个文件 · ${asset.categoryName}` : `${asset.language} · ${asset.categoryName}`}</small></div></div></td>
-                        <td className="col-kind">{isFile ? (asset.mediaKind !== "其他" ? asset.mediaKind : assetTypeLabel(asset.kind)) : asset.packageInfo?.dcc || assetTypeLabel(asset.kind)}</td>
+                      <tr className={open ? "is-open" : ""} onClick={() => (asset.files.length > 0 ? setExpanded((current) => ({ ...current, [asset.id]: !current[asset.id] })) : setEditor({ open: true, asset }))}>
+                        <td className="col-asset"><div className="table-asset"><span className="table-mark">{isFile ? <FileArchive size={14} /> : asset.kind === "Reference" ? <Link2 size={14} /> : <FileCode2 size={14} />}</span><div><b>{asset.title}</b><small>{isFile ? `${asset.fileSummary.total} 个文件 · ${asset.categoryName}` : `${asset.language} · ${asset.categoryName}`}</small></div></div></td>
+                        <td className="col-kind">{isFile ? (asset.mediaKind !== "其他" ? asset.mediaKind : <span className="muted">—</span>) : asset.kind === "Script" && asset.language !== "文本" ? asset.language : <span className="muted">—</span>}</td>
                         <td className="col-fmt">{asset.fileSummary.formats.length ? asset.fileSummary.formats.slice(0, 3).map((ext) => <i className="ext-badge" key={ext}>{ext}</i>) : <span className="muted">—</span>}</td>
                         <td className="col-size">{isFile ? formatBytes(asset.fileSummary.size) : `${asset.content.length} 字符`}</td>
-                        <td className="col-path">{primary ? <code title={primary.status.resolvedPath}>{templateForDisplay(primary.aliasKey, primary.path)}</code> : isFile ? <span className="muted">—</span> : asset.packageInfo.moduleName ? <code className="code-mono">import {asset.packageInfo.moduleName}</code> : <span className="muted">—</span>}</td>
+                        <td className="col-path">{primary ? <code title={primary.status.resolvedPath}>{templateForDisplay(primary.aliasKey, primary.path)}</code> : <span className="muted">—</span>}</td>
                         <td className="col-status">{isFile ? (asset.fileSummary.total === 0
                           ? <StatusPill tone="unknown" label="未登记文件" />
                           : <StatusPill
@@ -507,18 +542,19 @@ export default function VaultDashboard({ initialAssets, initialCategories, initi
                           <button className="icon-tiny" title="打开编辑器" onClick={() => setEditor({ open: true, asset })}><Ruler size={14} /></button>
                         </td>
                       </tr>
-                      {open && isFile && <tr className="expand-row"><td colSpan={8}>
+                      {open && asset.files.length > 0 && <tr className="expand-row"><td colSpan={8}>
                         <div className="expand-inner">
-                          <div className="expand-head"><span>文件清单 · {asset.files.length}</span><div><button className="ghost-tiny" onClick={() => void navigator.clipboard.writeText(asset.content).then(() => notify("交付说明已复制。")).catch(() => notify("剪贴板不可用。", "error"))}>复制说明</button><button className="primary-tiny" onClick={() => setEditor({ open: true, asset })}>编辑路径</button></div></div>
+                          <div className="expand-head"><span>路径清单 · {asset.files.length}</span><div><button className="ghost-tiny" onClick={() => void navigator.clipboard.writeText(asset.content).then(() => notify("正文已复制。")).catch(() => notify("剪贴板不可用。", "error"))}>复制正文</button><button className="primary-tiny" onClick={() => setEditor({ open: true, asset })}>编辑路径</button></div></div>
                           {asset.files.map((file) => {
                             const tone = statusTone(file.status.exists, file.status.error);
+                            const isDir = file.status.exists ? file.status.isDirectory : file.isDirectory;
                             return <div className="expand-file" key={file.id}>
-                              <i className="ext-badge strong">{file.ext}</i>
+                              <i className="ext-badge strong">{isDir ? "DIR" : file.ext || "···"}</i>
                               <b className="expand-name">{file.name}</b>
-                              <span className="expand-cat">{file.category}</span>
+                              <span className="expand-cat">{isDir ? "目录" : file.category}</span>
                               <code title={file.status.resolvedPath}>{templateForDisplay(file.aliasKey, file.path)}</code>
                               <span className="expand-size">{formatBytes(file.status.size ?? file.size)}</span>
-                              <StatusPill tone={tone} label={file.status.error ?? (tone === "present" ? "存在" : tone === "missing" ? "缺失" : "未校验")} />
+                              <StatusPill tone={tone} label={file.status.error ?? (tone === "present" ? (isDir ? "目录存在" : "存在") : tone === "missing" ? "缺失" : "未校验")} />
                               <button className="icon-tiny" title="复制服务器真实路径" onClick={() => void navigator.clipboard.writeText(file.status.resolvedPath).then(() => notify("真实路径已复制。")).catch(() => notify("剪贴板不可用。", "error"))}><Copy size={13} /></button>
                             </div>;
                           })}
@@ -530,6 +566,30 @@ export default function VaultDashboard({ initialAssets, initialCategories, initi
                 </tbody>
               </table>
             </div>}
+
+            {filteredAssets.length > 0 && (
+              <div className="pagination-bar">
+                <div className="pagination-meta">共 {filteredAssets.length} 条 · 第 {currentPage} / {totalPages} 页</div>
+                <div className="pagination-controls">
+                  <button className="page-button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={currentPage <= 1} aria-label="上一页"><ChevronDown size={15} className="rotate-90" /></button>
+                  {(() => {
+                    const pages: number[] = [];
+                    const start = Math.max(1, currentPage - 2);
+                    const end = Math.min(totalPages, currentPage + 2);
+                    for (let p = start; p <= end; p += 1) pages.push(p);
+                    return <>
+                      {start > 1 && <><button className="page-button" onClick={() => setPage(1)}>1</button>{start > 2 && <span className="page-ellipsis">…</span>}</>}
+                      {pages.map((p) => <button key={p} className={`page-button ${p === currentPage ? "active" : ""}`} onClick={() => setPage(p)} aria-current={p === currentPage ? "page" : undefined}>{p}</button>)}
+                      {end < totalPages && <>{end < totalPages - 1 && <span className="page-ellipsis">…</span>}<button className="page-button" onClick={() => setPage(totalPages)}>{totalPages}</button></>}
+                    </>;
+                  })()}
+                  <button className="page-button" onClick={() => setPage((current) => Math.min(totalPages, current + 1))} disabled={currentPage >= totalPages} aria-label="下一页"><ChevronDown size={15} className="rotate-270" /></button>
+                </div>
+                <select className="page-size-select" value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }} aria-label="每页条数">
+                  {[12, 24, 48, 96].map((size) => <option key={size} value={size}>每页 {size} 条</option>)}
+                </select>
+              </div>
+            )}
           </section>
 
           <section className="tips-strip">
@@ -568,6 +628,10 @@ export default function VaultDashboard({ initialAssets, initialCategories, initi
         }}
         onNotify={notify}
       />}
+
+      {duplicateOpen && <div className="modal-layer compact-layer" role="dialog" aria-modal="true" aria-label="重复检测"><div className="category-modal"><header><div><div className="modal-mini-icon"><ScanLine size={18} /></div><h2>重复检测</h2><p>检查登记路径和已保存的 SHA-256。</p></div><button className="icon-button" onClick={() => setDuplicateOpen(false)} aria-label="关闭"><X size={18} /></button></header><div className="trash-list">{!duplicateGroups.paths.length && !duplicateGroups.checksums.length ? <p>未发现重复项目。</p> : <>{duplicateGroups.paths.map((group) => <div className="expand-file" key={`path-${group.path}`}><b className="expand-name">重复路径：{group.path}</b><span>{group.items.map((item) => item.assetTitle).join("、")}</span></div>)}{duplicateGroups.checksums.map((group) => <div className="expand-file" key={`hash-${group.checksum}`}><b className="expand-name">相同 SHA-256：{group.checksum.slice(0, 16)}…</b><span>{group.items.map((item) => item.assetTitle).join("、")}</span></div>)}</>}</div><footer><button className="cancel-button" onClick={() => setDuplicateOpen(false)}>关闭</button></footer></div></div>}
+
+      {trashOpen && <div className="modal-layer compact-layer" role="dialog" aria-modal="true" aria-label="回收站"><div className="category-modal"><header><div><div className="modal-mini-icon"><Inbox size={18} /></div><h2>回收站</h2><p>资产可恢复；永久删除后无法撤回。</p></div><button className="icon-button" onClick={() => setTrashOpen(false)} aria-label="关闭"><X size={18} /></button></header><div className="trash-list">{!trashItems.length ? <p>回收站为空。</p> : trashItems.map((item) => <div className="expand-file" key={item.assetId}><b className="expand-name">{item.snapshot.asset?.title ?? "未命名资产"}</b><span className="expand-cat">{new Date(item.deletedAt).toLocaleString("zh-CN")}</span><button className="ghost-tiny" onClick={async () => { const response = await fetch("/api/vault/trash", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: item.assetId }) }); if (!response.ok) { notify("恢复失败。", "error"); return; } setTrashItems((items) => items.filter((entry) => entry.assetId !== item.assetId)); await refresh(); notify("资产已恢复。"); }}>恢复</button><button className="ghost-tiny" onClick={async () => { if (!window.confirm("永久删除该资产？")) return; const response = await fetch("/api/vault/trash", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: item.assetId }) }); if (response.ok) { setTrashItems((items) => items.filter((entry) => entry.assetId !== item.assetId)); notify("资产已永久删除。"); } else notify("永久删除失败。", "error"); }}>永久删除</button></div>)}</div><footer><button className="cancel-button" onClick={() => setTrashOpen(false)}>关闭</button></footer></div></div>}
 
       {categoryDialog && <div className="modal-layer compact-layer" role="dialog" aria-modal="true" aria-label="新建软件空间">
         <div className="category-modal">

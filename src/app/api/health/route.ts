@@ -11,8 +11,8 @@ export async function GET() {
     await mkdir(storedTextsDirectory, { recursive: true });
     await access(configDirectory);
     await access(storedTextsDirectory);
-    return Response.json({ ok: true, storage: "json", config: "config/cg_manager_config.json", texts: "stored_texts/" });
+    return Response.json({ ok: true, storage: "sqlite", config: "config/cg_manager_config.json", texts: "stored_texts/", database: "data/cg-vault.sqlite" });
   } catch {
-    return Response.json({ ok: false, storage: "json" }, { status: 500 });
+    return Response.json({ ok: false, storage: "sqlite" }, { status: 500 });
   }
 }

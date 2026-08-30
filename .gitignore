@@ -22,3 +22,8 @@ yarn-error.log*
 # local runtime data (用户数据可另行备份；config/ 与 stored_texts/ 是否入库由项目自行决定)
 /config/*.tmp
 /stored_texts/*.tmp
+
+# local SQLite runtime data
+/data/*.sqlite
+/data/*.sqlite-*
+/data/backups/

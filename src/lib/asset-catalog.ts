@@ -13,34 +13,9 @@ export type PathAliasDTO = {
   updatedAt: string;
 };
 
-export type MediaKind =
-  | "模型"
-  | "动画"
-  | "缓存几何"
-  | "装配/引用"
-  | "场景工程"
-  | "贴图/序列帧"
-  | "特效体积"
-  | "配置"
-  | "预览影片"
-  | "其他";
-
-export const MEDIA_KINDS: MediaKind[] = [
-  "模型",
-  "动画",
-  "缓存几何",
-  "装配/引用",
-  "场景工程",
-  "贴图/序列帧",
-  "特效体积",
-  "配置",
-  "预览影片",
-  "其他",
-];
-
 export type ExtInfo = {
   label: string;
-  category: MediaKind;
+  category: string;
   dcc: string;
   binary: boolean;
 };
@@ -192,28 +167,67 @@ export function templateForDisplay(aliasKey: string | null, relative: string) {
   return `$${aliasKey}${relative ? `/${relative.replace(/^[\\/]+/, "")}` : ""}`;
 }
 
-export const TECH_FIELDS: { key: string; label: string; placeholder: string }[] = [
-  { key: "frameRange", label: "帧范围", placeholder: "1-120" },
-  { key: "fps", label: "帧率", placeholder: "24 / 30 / 48" },
-  { key: "unitScale", label: "单位", placeholder: "cm / m / inch" },
-  { key: "upAxis", label: "上轴", placeholder: "Y-up / Z-up" },
-  { key: "lod", label: "LOD 层级", placeholder: "LOD0-LOD3" },
-  { key: "reference", label: "引用策略", placeholder: "Reference / Payload / Export" },
-];
-
+/** 资产类型（已收敛）：代码/脚本统一了旧版的「代码片段」与「可执行脚本」，
+ *  单文件/多文件的区分由「路径」本身表达（文件路径 / 文件夹路径 / 多条路径）。 */
 export const ASSET_TYPES = [
-  { value: "Snippet", label: "代码片段" },
-  { value: "Executable", label: "可执行脚本" },
+  { value: "Script", label: "代码/脚本" },
   { value: "Reference", label: "参考链接" },
   { value: "File", label: "文件资产" },
 ] as const;
 
+/** 旧版类型 → 新版类型映射，兼容历史 JSON 数据。 */
+export function normalizeKind(kind: string): string {
+  if (kind === "Snippet" || kind === "Executable") return "Script";
+  return kind;
+}
+
 export function assetTypeLabel(kind: string) {
-  return ASSET_TYPES.find((item) => item.value === kind)?.label ?? kind;
+  const normalized = normalizeKind(kind);
+  return ASSET_TYPES.find((item) => item.value === normalized)?.label ?? kind;
 }
 
 export function isFileType(kind: string) {
   return kind === "File";
+}
+
+/** 常见代码文件扩展名 → 语言名，用于「代码/脚本」按路径自动识别语言。 */
+const EXT_LANGUAGE: Record<string, string> = {
+  py: "Python",
+  mel: "MEL",
+  vex: "VEX",
+  hscript: "HScript",
+  glsl: "GLSL",
+  hlsl: "HLSL",
+  js: "JavaScript",
+  mjs: "JavaScript",
+  cjs: "JavaScript",
+  ts: "TypeScript",
+  cs: "C#",
+  cpp: "C++",
+  cxx: "C++",
+  cc: "C++",
+  h: "C++",
+  hpp: "C++",
+  json: "JSON",
+  yaml: "YAML",
+  toml: "TOML",
+  ini: "INI",
+  md: "Markdown",
+  txt: "Text",
+  css: "CSS",
+};
+
+export function languageForExt(ext: string): string | null {
+  return EXT_LANGUAGE[String(ext ?? "").toLowerCase().replace(/[^a-z0-9]/g, "")] ?? null;
+}
+
+/** 从登记的文件/文件夹路径推断语言（取第一个能识别的扩展名）。 */
+export function languageForFiles(files: { ext?: string }[]): string | null {
+  for (const file of files) {
+    const detected = languageForExt(file.ext ?? "");
+    if (detected) return detected;
+  }
+  return null;
 }
 
 export type FileStatusTone = "present" | "missing" | "unknown" | "error";
