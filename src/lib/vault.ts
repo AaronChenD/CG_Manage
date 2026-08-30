@@ -24,6 +24,8 @@ export type ManagedFile = {
   category: string;
   aliasKey: string | null;
   path: string;
+  /** 是否为文件夹路径（整目录登记，例如工具包目录）；null = 未指定，按文件处理。 */
+  isDirectory: boolean | null;
   size: number | null;
   checksum: string | null;
   checksumAlgo: string | null;
@@ -268,18 +270,16 @@ type AssetShape = {
 
 /**
  * 按资产类型裁剪字段，保证服务端数据始终自洽：
- *  - 文件资产：可有文件清单、资产细分与交付元数据（帧范围/上轴…），没有脚本部署计划
- *  - 可执行脚本：可有部署计划；只有「多文件包」形态才保留包内文件清单；没有交付元数据
- *  - 代码片段 / 参考链接：不带文件、元数据、部署计划
+ *  - 文件资产：可有文件清单（单文件 / 文件夹路径）；资产细分与交付元数据仅作历史兼容保留
+ *  - 代码/脚本：路径可选——纯粘贴的片段可以没有路径，工具包可登记单文件、文件夹或多条路径
+ *  - 参考链接：不带文件与元数据
  */
 function shapeByKind(kind: string, input: AssetShape): AssetShape {
   if (kind === "File") {
     return { mediaKind: input.mediaKind, files: input.files, tech: input.tech, package: packageDefaults(), deploy: null };
   }
-  if (kind === "Executable") {
-    const pkg = input.package;
-    const isMultiFile = pkg.packageKind === "多文件包 / 模块";
-    return { mediaKind: "其他", files: isMultiFile ? input.files : [], tech: {}, package: pkg, deploy: input.deploy };
+  if (kind === "Script") {
+    return { mediaKind: "其他", files: input.files, tech: {}, package: input.package, deploy: input.deploy };
   }
   return { mediaKind: "其他", files: [], tech: {}, package: packageDefaults(), deploy: null };
 }
@@ -288,7 +288,7 @@ function cleanFiles(value: unknown): ManagedFile[] {
   if (!Array.isArray(value)) return [];
   return value
     .filter((file): file is Record<string, unknown> => Boolean(file) && typeof file === "object")
-    .map((file) => {
+    .map((file): ManagedFile | null => {
       const rawPath = textValue(file.path).replaceAll("\\", "/");
       if (!rawPath) return null;
       const parsed = parsePathTemplate(rawPath);
@@ -304,6 +304,7 @@ function cleanFiles(value: unknown): ManagedFile[] {
         category: textValue(file.category, extInfo(ext).category).slice(0, 24),
         aliasKey: textValue(file.aliasKey).toUpperCase().replace(/[^A-Z0-9_.-]/g, "").slice(0, 32) || parsed.aliasKey || null,
         path: relative.slice(0, 900),
+        isDirectory: file.isDirectory === true,
         size: nullableNumber(file.size),
         checksum: textValue(file.checksum).slice(0, 128) || null,
         checksumAlgo: textValue(file.checksumAlgo).slice(0, 16) || null,
@@ -333,6 +334,7 @@ function sameFilesForRevision(a: ManagedFile[], b: ManagedFile[]): boolean {
       left.category !== right.category ||
       left.aliasKey !== right.aliasKey ||
       left.path !== right.path ||
+      left.isDirectory !== right.isDirectory ||
       left.checksum !== right.checksum ||
       left.checksumAlgo !== right.checksumAlgo ||
       left.publishedAt !== right.publishedAt ||
@@ -344,10 +346,15 @@ function sameFilesForRevision(a: ManagedFile[], b: ManagedFile[]): boolean {
   return true;
 }
 
-const ALLOWED_KINDS = new Set(["Snippet", "Executable", "Reference", "File"]);
+const ALLOWED_KINDS = new Set(["Script", "Reference", "File"]);
+
+/** 旧版「Snippet / Executable」统一并入「Script」。 */
+function legacyKindToScript(kind: string) {
+  return kind === "Snippet" || kind === "Executable" ? "Script" : kind;
+}
 
 function requireKind(value: unknown, fallback: string) {
-  const kind = textValue(value, fallback).slice(0, 24);
+  const kind = legacyKindToScript(textValue(value, fallback).slice(0, 24));
   if (!ALLOWED_KINDS.has(kind)) throw new VaultError(400, "不支持的资产类型，请刷新页面后重试。");
   return kind;
 }
@@ -381,9 +388,12 @@ function normalizeConfig(value: unknown): VaultConfig {
     ? raw.assets
         .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
         .map((asset) => {
-          const kind = textValue(asset.kind, "Snippet");
+          const storedKind = textValue(asset.kind, "Snippet");
+          // 读取时把旧版类型并入新类型；未知类型按「代码/脚本」处理，避免历史数据被丢弃。
+          const kind = legacyKindToScript(storedKind);
+          const kindSafe = ALLOWED_KINDS.has(kind) ? kind : "Script";
           // 读取时按类型裁剪，历史数据里错配的字段（例如脚本带着「资产细分」）会被自动纠正。
-          const shaped = shapeByKind(kind, {
+          const shaped = shapeByKind(kindSafe, {
             mediaKind: textValue(asset.mediaKind, "其他"),
             files: cleanFiles(asset.files),
             tech: cleanTech(asset.tech),
@@ -399,7 +409,7 @@ function normalizeConfig(value: unknown): VaultConfig {
           id: textValue(asset.id, randomUUID()),
           title: textValue(asset.title, "未命名资产"),
           categoryId: typeof asset.categoryId === "string" ? asset.categoryId : null,
-          kind,
+          kind: kindSafe,
           language: textValue(asset.language, "Python"),
           mediaKind: shaped.mediaKind,
           tags: cleanTags(asset.tags),
@@ -602,6 +612,9 @@ async function seedLibrarySamples() {
     { file: "publish/cache/hero_geo.abc", body: "oABC1234\nplaceholder alembic stream\n" },
     { file: "publish/usd/hero.usda", body: '#usda 1.0\n(\n    defaultPrim = "hero"\n)\n' },
     { file: "texture/hero_body_basecolor.png", body: "\u0089PNG\r\n\u001a\n placeholder\n" },
+    { file: "show/tools/publish/publish_alembic.py", body: '"""按当前场景名导出 Alembic 缓存的示例脚本。"""\n' },
+    { file: "show/tools/my_rig_tools/__init__.py", body: '"""示例绑定工具包目录（文件夹路径登记演示）。"""\n' },
+    { file: "show/tools/my_rig_tools/rig_utils.py", body: '"""示例模块文件。"""\n' },
   ];
   for (const sample of samples) {
     const target = join(assetLibraryPath, sample.file);
@@ -635,47 +648,32 @@ export async function ensureVaultSeed() {
         category: string;
         kind: string;
         language: string;
-        mediaKind: string;
         tags: string[];
         content: string;
         revision: number;
         isFavorite?: boolean;
-        package?: { dcc: string; packageKind: string; moduleName: string; importPath: string };
-        deploy?: DeployPlanDTO;
         files?: SeedFile[];
       };
-      type SeedFile = { name: string; aliasKey: string | null; path: string; category: string };
-      type SeedFileAsset = Omit<SeedAsset, "kind" | "language"> & { files: SeedFile[]; tech: Record<string, string> };
+      type SeedFile = { name: string; aliasKey: string | null; path: string; category: string; isDirectory?: boolean };
+      type SeedFileAsset = Omit<SeedAsset, "kind" | "language"> & { files: SeedFile[] };
 
       const textAssets: SeedAsset[] = [
         {
           title: "智能发布 — Alembic 缓存导出",
           category: "Maya",
-          kind: "Executable",
+          kind: "Script",
           language: "Python",
-          mediaKind: "其他",
           tags: ["发布", "缓存", "管线", "批处理"],
-          content: `import maya.cmds as cmds
-from pathlib import Path
-
-def publish_alembic(output_dir: str):
-    """按当前场景名导出 Alembic 缓存，返回目标路径。"""
-    scene = Path(cmds.file(q=True, sn=True))
-    cache_name = scene.stem + "_geo.abc"
-    target = Path(output_dir) / cache_name
-    cmds.AbcExport(j=f"-frameRange 1 120 -uvWrite -file {target}")
-    return target
-
-print(publish_alembic("$PUB/cache"))`,
+          content: `按当前场景名导出 Alembic 缓存到发布目录，脚本本体登记在 $SHOW/tools/publish/。`,
+          files: [{ name: "publish_alembic.py", aliasKey: "SHOW", path: "tools/publish/publish_alembic.py", category: "配置" }],
           revision: 4,
           isFavorite: true,
         },
         {
           title: "属性散布工具包（Point Wrangle）",
           category: "Houdini",
-          kind: "Snippet",
+          kind: "Script",
           language: "VEX",
-          mediaKind: "其他",
           tags: ["点属性", "散布", "程序化"],
           content: `// Point wrangle —— 确定性属性散布
 int seed = chi("seed");
@@ -688,9 +686,8 @@ v@Cd = chramp("palette", rand(@ptnum * 17 + seed));`,
         {
           title: "贴图路径批量重链",
           category: "Blender",
-          kind: "Executable",
+          kind: "Script",
           language: "Python",
-          mediaKind: "其他",
           tags: ["贴图", "路径", "生产环境"],
           content: `import bpy
 from pathlib import Path
@@ -708,7 +705,6 @@ for image in bpy.data.images:
           category: "全局通用",
           kind: "Reference",
           language: "Markdown",
-          mediaKind: "其他",
           tags: ["交接", "审核", "流程"],
           content: `# 镜头交接检查表
 
@@ -720,34 +716,14 @@ for image in bpy.data.images:
           revision: 3,
         },
         {
-          title: "my_rig_tools 绑定工具包（Maya 多文件模块）",
+          title: "my_rig_tools 绑定工具包",
           category: "Maya",
-          kind: "Executable",
+          kind: "Script",
           language: "Python",
-          mediaKind: "其他",
-          tags: ["maya", "rigging", "工具包", "模块"],
-          content: `绑定工具集，包含多个模块文件。
-
-安装：把整个 my_rig_tools 目录放进 Maya 用户脚本目录
-调用：shelf 按钮执行 import my_rig_tools; my_rig_tools.main()`,
-          package: { dcc: "Maya", packageKind: "多文件包 / 模块", moduleName: "my_rig_tools", importPath: "scripts/my_rig_tools" },
-          deploy: {
-            dcc: "Maya",
-            installTarget: "maya-scripts",
-            installSubpath: "scripts/my_rig_tools",
-            installMethod: "symlink",
-            hasEntry: true,
-            entryPoint: "main",
-            callContext: "shelf",
-            invocation: "import my_rig_tools\nmy_rig_tools.main()",
-            createdAt: "",
-            updatedAt: "",
-          },
-          files: [
-            { name: "__init__.py", aliasKey: "SHOW", path: "tools/my_rig_tools/__init__.py", category: "配置" },
-            { name: "rig_utils.py", aliasKey: "SHOW", path: "tools/my_rig_tools/rig_utils.py", category: "配置" },
-            { name: "ui.py", aliasKey: "SHOW", path: "tools/my_rig_tools/ui.py", category: "配置" },
-          ],
+          tags: ["maya", "rigging", "工具包", "目录"],
+          content: `绑定工具集：直接把整个 my_rig_tools 文件夹作为一条路径登记（文件夹路径），
+放进 Maya 用户脚本目录后即可 import my_rig_tools 调用。`,
+          files: [{ name: "my_rig_tools", aliasKey: "SHOW", path: "tools/my_rig_tools", category: "配置", isDirectory: true }],
           revision: 2,
           isFavorite: true,
         },
@@ -757,7 +733,6 @@ for image in bpy.data.images:
         {
           title: "Hero 角色模型（FBX 交付包）",
           category: "Maya",
-          mediaKind: "模型",
           tags: ["角色", "模型", "fbx", "交付"],
           content: `交付说明
 
@@ -768,54 +743,45 @@ for image in bpy.data.images:
             { name: "hero_body.fbx", aliasKey: "PUB", path: rel("PUB", "model/hero_body.fbx"), category: "模型" },
             { name: "hero_eyes.fbx", aliasKey: "PUB", path: rel("PUB", "model/hero_eyes.fbx"), category: "模型" },
           ],
-          tech: { frameRange: "—", unitScale: "cm", upAxis: "Y-up", reference: "Reference" },
           revision: 3,
           isFavorite: true,
         },
         {
           title: "Hero 走路动画（BVH）",
           category: "全局通用",
-          mediaKind: "动画",
           tags: ["动捕", "bvh", "走路"],
           content: `动捕原始数据，已清理抖动；重定向到 hero_rig 前请先确认骨骼命名。`,
           files: [{ name: "hero_walk.bvh", aliasKey: "PUB", path: rel("PUB", "anim/hero_walk.bvh"), category: "动画" }],
-          tech: { frameRange: "1-48", fps: "30", upAxis: "Y-up" },
           revision: 2,
         },
         {
           title: "Hero 几何缓存（Alembic）",
           category: "Houdini",
-          mediaKind: "缓存几何",
           tags: ["abc", "缓存", "sim"],
           content: `布料 + 头发双缓存，帧范围 1-120，包含 uvWrite 与 velocity 通道。`,
           files: [
             { name: "hero_geo.abc", aliasKey: "PUB", path: rel("PUB", "cache/hero_geo.abc"), category: "缓存几何" },
             { name: "hero_sim_final.abc", aliasKey: "SHOW", path: rel("SHOW", "fx/cache/hero_sim_final.abc"), category: "缓存几何" },
           ],
-          tech: { frameRange: "1-120", fps: "24", unitScale: "cm" },
           revision: 5,
         },
         {
           title: "Hero USD 装配（Stage）",
           category: "Unreal Engine",
-          mediaKind: "装配/引用",
           tags: ["usd", "装配", "onefile"],
           content: `Stage 结构：hero/geo（Payload）+ hero/material（Reference）。缺失文件通常是贴图别名未配置。`,
           files: [
             { name: "hero.usda", aliasKey: "PUB", path: rel("PUB", "usd/hero.usda"), category: "装配/引用" },
             { name: "hero_body_basecolor.png", aliasKey: "TEX", path: rel("TEX", "hero_body_basecolor.png"), category: "贴图/序列帧" },
           ],
-          tech: { lod: "LOD0-LOD3", reference: "Payload" },
           revision: 1,
         },
         {
           title: "Hero 绑定工程（Maya 场景）",
           category: "Maya",
-          mediaKind: "场景工程",
           tags: ["rig", "绑定", "工程"],
           content: `工作区场景，包含 build 与 anim 两套命名空间。`,
           files: [{ name: "hero_rig.ma", aliasKey: "SHOW", path: rel("SHOW", "character/hero_rig.ma"), category: "场景工程" }],
-          tech: { upAxis: "Y-up", unitScale: "cm" },
           revision: 6,
         },
       ];
@@ -830,7 +796,7 @@ for image in bpy.data.images:
           categoryId: getCategoryId(seed.category),
           kind: seed.kind,
           language: seed.language,
-          mediaKind: seed.mediaKind,
+          mediaKind: "其他",
           tags: seed.tags,
           links: [],
           files: (seed.files ?? []).map((file) => ({
@@ -840,6 +806,7 @@ for image in bpy.data.images:
             category: file.category,
             aliasKey: file.aliasKey,
             path: file.path,
+            isDirectory: file.isDirectory === true,
             size: null,
             checksum: null,
             checksumAlgo: null,
@@ -847,8 +814,8 @@ for image in bpy.data.images:
             note: "",
           })),
           tech: {},
-          package: seed.package ?? packageDefaults(),
-          deploy: seed.deploy ?? null,
+          package: packageDefaults(),
+          deploy: null,
           revision: seed.revision,
           isFavorite: Boolean(seed.isFavorite),
           contentFile,
@@ -876,6 +843,7 @@ for image in bpy.data.images:
           category: file.category,
           aliasKey: file.aliasKey,
           path: file.path,
+          isDirectory: file.isDirectory === true,
           size: null,
           checksum: null,
           checksumAlgo: null,
@@ -888,11 +856,11 @@ for image in bpy.data.images:
           categoryId: getCategoryId(seed.category),
           kind: "File",
           language: "File",
-          mediaKind: seed.mediaKind,
+          mediaKind: "其他",
           tags: seed.tags,
           links: [],
           files,
-          tech: seed.tech,
+          tech: {},
           package: packageDefaults(),
           deploy: null,
           revision: seed.revision,
@@ -979,7 +947,7 @@ export async function createAsset(input: AssetInput) {
   return withWriteLock(async () => {
     const config = await readConfig();
     const title = requireTitle(input.title);
-    const kind = requireKind(input.kind, "Snippet");
+    const kind = requireKind(input.kind, "Script");
     const categoryId = typeof input.categoryId === "string" ? input.categoryId || null : null;
     if (categoryId && !config.categories.some((category) => category.id === categoryId)) throw new VaultError(400, "所选软件空间已不存在，请重新选择。");
     const files = cleanFiles(input.files);
@@ -1006,7 +974,7 @@ export async function createAsset(input: AssetInput) {
       title,
       categoryId,
       kind,
-      language: textValue(input.language, kind === "File" ? "File" : "Python").slice(0, 32),
+      language: textValue(input.language, kind === "File" ? "File" : "文本").slice(0, 32),
       mediaKind: shaped.mediaKind,
       tags: cleanTags(input.tags),
       links: cleanLinks(input.links),
@@ -1234,6 +1202,7 @@ export async function checkPaths(entries: unknown, withHash = false) {
         category: "其他",
         aliasKey: usedKey,
         path: relative,
+        isDirectory: null,
         size: null,
         checksum: null,
         checksumAlgo: null,
