@@ -165,11 +165,3 @@ Remove-Item .\stored_texts\*.json -ErrorAction SilentlyContinue
 默认情况下，运行服务的本机拥有读写权限，其他机器只能读取和搜索，所有写入 API 会返回 403。反向代理部署时必须正确传递 `x-forwarded-for` 或 `x-real-ip`；仅在明确受信任的内网环境中才设置 `CG_ALLOW_REMOTE_WRITE=true` 放开远程写入。
 
 每次修改 JSON 前会在同目录保留上一份 `.bak` 文件。建议定期复制 `config/` 与 `stored_texts/` 到独立备份位置。
-
-## 后续可选升级
-
-1. 只读分享链接与更细粒度用户权限
-2. 索引与全文检索加速（资产上千条时考虑 SQLite / FTS）
-3. 真正的文件版本库（LFS 或对象存储 + 校验和对比）
-4. DCC 插件：Maya / Houdini / Blender 内直接搜索与推送代码、下载文件
-5. 本地 Agent：实现「打开所在目录」「启动软件并加载文件」等浏览器做不到的动作
